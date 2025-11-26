@@ -1,0 +1,221 @@
+# modules/response_builder.py
+import os
+from typing import List, Optional, Dict, Tuple
+
+import supabase_client  # ensures .env is loaded once
+from openai import OpenAI
+
+from modules.rag_search import format_context, search_sakhi_kb, add_kb_entry
+
+_api_key = os.getenv("OPENAI_API_KEY")
+if not _api_key:
+    raise Exception("OPENAI_API_KEY missing")
+
+client = OpenAI(api_key=_api_key)
+
+# Classifier system prompt (must be exact)
+CLASSIFIER_PROMPT = """
+You are a Digital Nurse Chatbot.
+
+Your task:
+1. Detect the language of the user's message. The input may be:
+   - Telugu
+   - English
+   - Tinglish (Telugu written in Roman alphabet)
+
+2. Translate the message internally into English for analysis, but always respond in the user’s identified language.
+
+3. Check if the user’s question clearly relates to any of these topics:
+   IVF, Fertility, Parenthood, Pregnancy, Ovulation, Infertility,
+   IUI, Treatment cost, Success rate.
+
+4. Output MUST include ONLY:
+
+Identified Language: <language>
+
+General Output:
+[SIGNAL]: YES or NO
+[ANSWER]: EMPTY
+"""
+
+
+def classify_message(message: str) -> Dict[str, str]:
+    """
+    Run the classifier prompt and parse out language and signal.
+    """
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": CLASSIFIER_PROMPT},
+            {"role": "user", "content": message},
+        ],
+        temperature=0.2,
+    )
+
+    content = completion.choices[0].message.content
+    language = ""
+    signal = ""
+
+    for line in content.splitlines():
+        low = line.lower()
+        if low.startswith("identified language"):
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                language = parts[1].strip()
+        elif "[signal]" in low:
+            parts = line.split(":", 1)
+            if len(parts) == 2:
+                signal = parts[1].strip().upper()
+
+    return {
+        "language": language or "en",
+        "signal": signal or "NO",
+    }
+
+
+def _friendly_name(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    trimmed = name.strip()
+    if not trimmed:
+        return None
+    lowered = trimmed.lower()
+    if lowered in {"null", "none", "user", "test", "unknown"}:
+        return None
+    # shorten if very long
+    parts = trimmed.split()
+    candidate = parts[0]
+    if len(candidate) > 14:
+        candidate = candidate[:14]
+    return candidate
+
+
+def _build_history_block(history: Optional[List[Dict[str, str]]]) -> str:
+    if not history:
+        return "### Conversation History:\nNone."
+    lines = ["### Conversation History:"]
+    for msg in history:
+        role = msg.get("role", "user").capitalize()
+        content = msg.get("content", "")
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
+def generate_smalltalk_response(
+    prompt: str,
+    target_lang: str,
+    history: Optional[List[Dict[str, str]]],
+    user_name: Optional[str] = None,
+    store_to_kb: bool = False,
+) -> str:
+    user_name = _friendly_name(user_name)
+    history_block = _build_history_block(history)
+    has_history = bool(history)
+    name_line = f"User name: {user_name}" if user_name else "User name: Not provided"
+    greeting_rule = (
+        "If this is the first turn, start with a warm greeting and the name (e.g., 'Hi <name>,'). "
+        "If this is a follow-up, do NOT say 'Hi' again; instead give a brief caring acknowledgement with the name (e.g., '<name>, I'm here for you.'). "
+        "If no usable name, use a gentle greeting without a name."
+    )
+    system_content = (
+        "You are Sakhi, an emotional companion.\n"
+        "User is NOT asking medical questions.\n"
+        "Give a warm, supportive, friendly, empathetic reply.\n"
+        "Avoid medical or fertility information completely.\n"
+        f"{greeting_rule}\n"
+        "Match the language of the user prompt: respond ONLY in target_lang. "
+        "If target_lang is Tinglish, write Telugu words using Roman letters; do not switch to English.\n"
+        "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
+        f"{name_line}\n"
+        "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
+        "Maintain continuity using the conversation history.\n"
+        f"{history_block}"
+    )
+
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
+    )
+
+    final_text = completion.choices[0].message.content
+
+    return final_text
+
+
+def generate_medical_response(
+    prompt: str,
+    target_lang: str,
+    history: Optional[List[Dict[str, str]]],
+    user_name: Optional[str] = None,
+) -> Tuple[str, List[dict]]:
+    """
+    Medical path: RAG + history.
+    Returns (final_text, kb_results)
+    """
+    kb_results = search_sakhi_kb(prompt)
+    context_text = format_context(kb_results)
+    history_block = _build_history_block(history)
+
+    user_name = _friendly_name(user_name)
+    name_line = f"User name: {user_name}" if user_name else "User name: Not provided"
+    has_history = bool(history)
+    greeting_rule = (
+        "If this is the first turn, start with a warm greeting and the name (e.g., 'Hi <name>,'). "
+        "If this is a follow-up, do NOT say 'Hi' again; instead give a brief caring acknowledgement with the name (e.g., '<name>, I understand.'). "
+        "If no usable name, use a gentle greeting without a name."
+    )
+    system_content = (
+        "You are Sakhi, a warm emotional companion but medically safe.\n"
+        "Use retrieved knowledge when available. If none is retrieved, you may give general, high-level, medically safe guidance.\n"
+        "Be conservative and clearly state when guidance is general; advise consulting a doctor for specifics.\n"
+        f"{greeting_rule}\n"
+        "Match the language of the user prompt: respond ONLY in target_lang. "
+        "If target_lang is Tinglish, write Telugu words using Roman letters; do not switch to English.\n"
+        "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
+        "Begin with one short empathetic line before the structured sections.\n"
+        "FORMAT YOUR REPLY EXACTLY AS:\n"
+        "Title: <1-line summary>\n"
+        "Key Points:\n"
+        "- <bullet 1>\n"
+        "- <bullet 2>\n"
+        "- <bullet 3>\n"
+        "Actions:\n"
+        "- <short actionable steps>\n"
+        "YouTube: <link or 'None'>\n"
+        "If any FAQ items include a YouTube link, put it on the YouTube line and suggest watching it for better understanding.\n"
+        "If a usable name is available, open with it naturally (e.g., 'Hi <name>,'). If not, avoid naming.\n"
+        f"Always answer in {target_lang}.\n"
+        f"{name_line}\n"
+        "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
+        "Maintain continuity using the conversation history.\n"
+        f"{history_block}"
+    )
+
+    if context_text:
+        system_content += f"\n\n{context_text}"
+        system_content += (
+            "\nUse the above knowledge directly. If something is unclear, stay conservative and safe."
+        )
+    else:
+        system_content += (
+            "\n\n### Retrieved Knowledge:\nNone."
+            "\nNo KB retrieved. Provide general, high-level, medically safe guidance."
+            "\nState clearly that advice is general and suggest consulting a doctor for specifics."
+        )
+
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
+    )
+
+    final_text = completion.choices[0].message.content
+
+    return final_text, kb_results
