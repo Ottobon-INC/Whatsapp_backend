@@ -101,10 +101,6 @@ def get_user_by_phone(phone_number: str):
     rows = supabase_select("sakhi_users", select="*", filters=f"phone_number=eq.{norm}")
     if rows and isinstance(rows, list) and rows:
         return rows[0]
-    # fallback to phone column
-    rows = supabase_select("sakhi_users", select="*", filters=f"phone=eq.{norm}")
-    if rows and isinstance(rows, list) and rows:
-        return rows[0]
     return None
 
 
@@ -113,3 +109,35 @@ def resolve_user_id_by_phone(phone_number: str) -> str | None:
     if user:
         return user.get("user_id")
     return None
+
+
+def create_partial_user(phone_number: str):
+    """
+    Create a minimal user record with just phone number to start onboarding.
+    """
+    user_id = generate_user_id()
+    norm_phone = _normalize_phone(phone_number)
+    
+    data = {
+        "user_id": user_id,
+        "phone_number": norm_phone,
+        "role": "USER",
+    }
+    
+    # insert
+    inserted = supabase_insert("sakhi_users", data)
+    if isinstance(inserted, list) and inserted:
+        return inserted[0]
+    if isinstance(inserted, dict):
+        return inserted
+    return data
+
+def update_user_profile(user_id: str, updates: dict):
+    """
+    Update specific fields in user profile.
+    """
+    if not user_id:
+        raise ValueError("user_id is required")
+    
+    match = f"user_id=eq.{user_id}"
+    return supabase_update("sakhi_users", match, updates)

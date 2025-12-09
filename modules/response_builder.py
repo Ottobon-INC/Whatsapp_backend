@@ -5,7 +5,9 @@ from typing import List, Optional, Dict, Tuple
 import supabase_client  # ensures .env is loaded once
 from openai import OpenAI
 
-from modules.rag_search import format_context, search_sakhi_kb, add_kb_entry
+from modules.rag_search import add_kb_entry
+# Import from root (assuming running from main.py)
+from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 
 _api_key = os.getenv("OPENAI_API_KEY")
 if not _api_key:
@@ -15,7 +17,7 @@ client = OpenAI(api_key=_api_key)
 
 # Classifier system prompt (must be exact)
 CLASSIFIER_PROMPT = """
-You are a Digital Nurse Chatbot.
+You are a Digital South Indian Nurse Chatbot.
 
 Your task:
 1. Detect the language of the user's message. The input may be:
@@ -27,7 +29,7 @@ Your task:
 
 3. Check if the user’s question clearly relates to any of these topics:
    IVF, Fertility, Parenthood, Pregnancy, Ovulation, Infertility,
-   IUI, Treatment cost, Success rate.
+   IUI, Treatment cost, Success rate, Finance, Clinics, Doctors.
 
 4. Output MUST include ONLY:
 
@@ -35,7 +37,6 @@ Identified Language: <language>
 
 General Output:
 [SIGNAL]: YES or NO
-[ANSWER]: EMPTY
 """
 
 
@@ -118,7 +119,7 @@ def generate_smalltalk_response(
         "If no usable name, use a gentle greeting without a name."
     )
     system_content = (
-        "You are Sakhi, an emotional companion.\n"
+        "You are Sakhi, an emotional south indian companion.\n"
         "User is NOT asking medical questions.\n"
         "Give a warm, supportive, friendly, empathetic reply.\n"
         "Avoid medical or fertility information completely.\n"
@@ -127,8 +128,6 @@ def generate_smalltalk_response(
         "If target_lang is Tinglish, write Telugu words using Roman letters; do not switch to English.\n"
         "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
         "Keep the tone conversational like two people chatting; avoid headings or bullet labels. Use full stops/commas naturally.\n"
-        "After your main reply, add a 'Follow-ups:' line and 2-4 short questions, each on its own line starting with a dash, to keep the conversation going.\n"
-        "IMPORTANT: Each follow-up question MUST be under 65 characters long.\n"
         f"{name_line}\n"
         "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
         "Maintain continuity using the conversation history.\n"
@@ -159,8 +158,10 @@ def generate_medical_response(
     Medical path: RAG + history.
     Returns (final_text, kb_results)
     """
-    kb_results = search_sakhi_kb(prompt)
-    context_text = format_context(kb_results)
+    # Use Hierarchical RAG
+    kb_results = hierarchical_rag_query(prompt)
+    context_text = format_hierarchical_context(kb_results)
+    
     history_block = _build_history_block(history)
 
     user_name = _friendly_name(user_name)
@@ -172,14 +173,14 @@ def generate_medical_response(
         "If no usable name, use a gentle greeting without a name."
     )
     system_content = (
-        "You are Sakhi, a warm emotional companion but medically safe.\n"
+        "You are Sakhi, a warm emotional south indian companion but medically safe.\n"
         "Use retrieved knowledge when available. If none is retrieved, you may give general, high-level, medically safe guidance.\n"
         "Be conservative and clearly state when guidance is general; advise consulting a doctor for specifics.\n"
         f"{greeting_rule}\n"
         "Match the language of the user prompt: respond ONLY in target_lang. "
         "If target_lang is Tinglish, write Telugu words using Roman letters; do not switch to English.\n"
         "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
-        "Provide one coherent conversational reply (no headings/bullet labels), with a caring tone and clear punctuation. If any FAQ items include a YouTube link, include a final line like 'YouTube: <link>' and suggest watching it.\n"
+        "Provide one coherent conversational reply (no headings/bullet labels), with a caring tone and clear punctuation. \n"
         "After your main reply, add a 'Follow-ups:' line and 2-4 short questions, each on its own line starting with a dash, to keep the conversation going.\n"
         "IMPORTANT: Each follow-up question MUST be under 65 characters long.\n"
         "If a usable name is available, open with it naturally (e.g., 'Hi <name>,'). If not, avoid naming.\n"
