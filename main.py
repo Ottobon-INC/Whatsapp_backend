@@ -20,8 +20,15 @@ from modules.response_builder import (
 )
 from modules.conversation import save_user_message, save_sakhi_message, get_last_messages
 from modules.user_answers import save_bulk_answers
+from modules.model_gateway import get_model_gateway, Route
+from modules.slm_client import get_slm_client
+from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 
 app = FastAPI()
+
+# Initialize model gateway and SLM client (singleton instances)
+model_gateway = get_model_gateway()
+slm_client = get_slm_client()
 
 
 class RegisterRequest(BaseModel):
@@ -87,7 +94,7 @@ def register_user(req: RegisterRequest):
 
 
 @app.post("/sakhi/chat")
-def sakhi_chat(req: ChatRequest):
+async def sakhi_chat(req: ChatRequest):
     # 1. Resolve or Create User
     user = None
     if req.user_id:
@@ -102,7 +109,7 @@ def sakhi_chat(req: ChatRequest):
                 user = create_partial_user(req.phone_number)
                 # Return Welcome Message
                 return {
-                    "reply": "Welcome to Sakhi! I'd love to get to know you better. First, what is your name?",
+                    "reply": "Welcome to Sakhi! I'd love to get to know you better. First, what is your name? Ex: Abhi , Deepthi",
                     "mode": "onboarding"
                 }
             except Exception as e:
@@ -134,7 +141,7 @@ def sakhi_chat(req: ChatRequest):
     elif not current_gender:
         update_user_profile(user_id, {"gender": msg})
         return {
-            "reply": "Got it. And finally, what's your location (City/State)? (e.g., Mumbai, Maharashtra)",
+            "reply": "Got it. And finally, what's your location (City/Town)? (e.g., Vizag)",
             "mode": "onboarding"
         }
 
@@ -167,6 +174,9 @@ def sakhi_chat(req: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save user message: {e}")
 
+    # STEP 0: Decide routing using Model Gateway
+    route = model_gateway.decide_route(req.message)
+
     # Step 1: classify message
     try:
         classification = classify_message(req.message)
@@ -188,6 +198,79 @@ def sakhi_chat(req: ChatRequest):
     # Conversation history for both modes
     history = get_last_messages(user_id, limit=5)
 
+    # ===== ROUTE 1: SLM_DIRECT (Small talk, no RAG) =====
+    if route == Route.SLM_DIRECT:
+        try:
+            final_ans = await slm_client.generate_chat(
+                message=req.message,
+                language=detected_lang,
+                user_name=user_name,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate SLM chat response: {e}")
+        
+        try:
+            save_sakhi_message(user_id, final_ans, detected_lang)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
+        
+        return {
+            "reply": final_ans,
+            "mode": "general",
+            "language": detected_lang,
+            "route": "slm_direct"
+        }
+    
+    # ===== ROUTE 2: SLM_RAG (Simple medical, RAG + SLM) =====
+    elif route == Route.SLM_RAG:
+        # Perform RAG search
+        try:
+            kb_results = hierarchical_rag_query(req.message)
+            context_text = format_hierarchical_context(kb_results)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to perform RAG search: {e}")
+        
+        # Generate response using SLM with context
+        try:
+            final_ans = await slm_client.generate_rag_response(
+                context=context_text,
+                message=req.message,
+                language=detected_lang,
+                user_name=user_name,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate SLM RAG response: {e}")
+        
+        try:
+            save_sakhi_message(user_id, final_ans, detected_lang)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
+        
+        # Extract metadata from KB results
+        infographic_url = None
+        youtube_link = None
+        if kb_results:
+            for item in kb_results:
+                if item.get("source_type") == "FAQ":
+                    if item.get("infographic_url"):
+                        infographic_url = item["infographic_url"]
+                    if item.get("youtube_link"):
+                        youtube_link = item["youtube_link"]
+                    if infographic_url or youtube_link:
+                        break
+        
+        response_payload = {
+            "reply": final_ans,
+            "mode": "medical",
+            "language": detected_lang,
+            "youtube_link": youtube_link,
+            "infographic_url": infographic_url,
+            "route": "slm_rag"
+        }
+        print(f"Response Payload: {response_payload}")
+        return response_payload
+
+    # Keep existing small talk logic as fallback (though routing should handle this)
     if signal != "YES":
         # Small-talk mode: no RAG
         try:
@@ -208,6 +291,7 @@ def sakhi_chat(req: ChatRequest):
 
         return {"reply": final_ans, "mode": "general", "language": detected_lang}
 
+    # ===== ROUTE 3: OPENAI_RAG (Complex medical or default, RAG + GPT-4) =====
     # Medical mode: RAG
     try:
         final_ans, _kb = generate_medical_response(
@@ -244,7 +328,8 @@ def sakhi_chat(req: ChatRequest):
         "mode": "medical", 
         "language": detected_lang,
         "youtube_link": youtube_link,
-        "infographic_url": infographic_url
+        "infographic_url": infographic_url,
+        "route": "openai_rag"
     }
     print(f"Response Payload: {response_payload}")
     return response_payload
