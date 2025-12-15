@@ -6,6 +6,7 @@ import supabase_client  # ensures .env is loaded once
 from openai import OpenAI
 
 from modules.rag_search import add_kb_entry
+from modules.text_utils import truncate_response
 # Import from root (assuming running from main.py)
 from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 
@@ -144,6 +145,9 @@ def generate_smalltalk_response(
     )
 
     final_text = completion.choices[0].message.content
+    
+    # Truncate response to maximum 1024 characters
+    final_text = truncate_response(final_text)
 
     return final_text
 
@@ -226,5 +230,8 @@ def generate_medical_response(
     )
 
     final_text = completion.choices[0].message.content
+    
+    # Truncate response to maximum 1024 characters
+    final_text = truncate_response(final_text)
 
     return final_text, kb_results
