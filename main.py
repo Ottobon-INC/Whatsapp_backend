@@ -109,7 +109,7 @@ async def sakhi_chat(req: ChatRequest):
                 user = create_partial_user(req.phone_number)
                 # Return Welcome Message
                 return {
-                    "reply": "Welcome to Sakhi! I'd love to get to know you better. First, what is your name? Ex: Abhi , Deepthi",
+                    "reply": "Welcome to Sakhi! I'm here to support you on your health journey. ❤️ \n Let's get started! What should I call you? (Please type just your name, e.g., Deepthi)",
                     "mode": "onboarding"
                 }
             except Exception as e:
@@ -133,7 +133,7 @@ async def sakhi_chat(req: ChatRequest):
     if not current_name:
         update_user_profile(user_id, {"name": msg})
         return {
-            "reply": f"Nice to meet you, {msg}! What is your gender? (Please reply with 'Male' or 'Female')",
+            "reply": f"Nice to meet you, {msg}! Can you let me know your gender ? (Please reply with 'Male' or 'Female')",
             "mode": "onboarding"
         }
 
@@ -159,7 +159,8 @@ async def sakhi_chat(req: ChatRequest):
             "💛 I am a Safe Space: Pour your heart out, ask me the \"silly\" questions, or just vent. I am here to listen without judgment.\n\n"
             "👩‍⚕️ I offer Doctor-Approved Trust: While I speak to you like a friend, my wisdom comes from validated medical professionals, so you can trust the guidance I give.\n\n"
             "🧠 I bring Visual Clarity: Confused by medical terms? I use simple infographics to make complex topics clear and easy to understand.\n\n"
-            "My goal is to restore your faith and give you strength when you need it most. I am ready to listen whenever you are ready to talk."
+            "My goal is to restore your faith and give you strength when you need it most. I am ready to listen whenever you are ready to talk.\n\n"
+            "Visit the Website below for more information"
         )
         
         return {
