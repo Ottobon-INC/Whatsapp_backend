@@ -29,27 +29,182 @@ class ModelGateway:
         "hi",
         "hello",
         "hey there",
+        "hey",
         "thanks",
         "thank you",
+        "thanks a lot",
+        "thank you so much",
         "who are you",
         "what is your name",
+        "may i know your name",
         "how are you",
+        "how are you doing",
+        "how's it going",
+        "what's up",
         "good morning",
+        "good afternoon",
+        "good evening",
+        "good night",
+        "bye",
         "goodbye",
+        "see you",
+        "see you later",
+        "talk to you later",
+        "nice to meet you",
+        "pleased to meet you",
+        "ok",
+        "okay",
+        "cool",
+        "great",
+        "awesome",
+        "no problem",
+        "you're welcome",
+        "welcome",
     ]
     
-    MEDICAL_SIMPLE_EXAMPLES = [
-        "what is folic acid",
-        "foods for iron",
-        "foods rich in calcium",
-        "headache remedies",
-        "how to increase hemoglobin",
-        "vitamin d benefits",
-        "pregnancy diet tips",
-        "morning sickness relief",
-        "what is ovulation",
-        "safe exercises during pregnancy",
-    ]
+    MEDICAL_SIMPLE_EXAMPLES = {
+        "IVF": [
+            "what is ivf",
+            "how ivf treatment works",
+            "ivf success rate",
+            "ivf process step by step",
+            "ivf treatment cost",
+            "is ivf painful",
+            "ivf risks",
+            "who needs ivf",
+        ],
+        "IUI": [
+            "what is iui",
+            "iui treatment process",
+            "iui success rate",
+            "difference between iui and ivf",
+            "iui cost",
+            "is iui painful",
+        ],
+        "ICSI": [
+            "what is icsi",
+            "icsi vs ivf",
+            "when is icsi needed",
+            "icsi success rate",
+            "icsi treatment steps",
+        ],
+        "FERTILITY": [
+            "what is fertility",
+            "how to improve fertility naturally",
+            "fertility age limit",
+            "fertility tests for women",
+            "fertility tests for men",
+        ],
+        "FEMALE_INFERTILITY": [
+            "what causes female infertility",
+            "female infertility symptoms",
+            "tests for female infertility",
+            "can female infertility be treated",
+        ],
+        "MALE_INFERTILITY": [
+            "what causes male infertility",
+            "male infertility symptoms",
+            "sperm count test",
+            "how to improve sperm quality",
+        ],
+        "LAPAROSCOPY": [
+            "what is laparoscopy",
+            "laparoscopy for infertility",
+            "is laparoscopy surgery painful",
+            "recovery time after laparoscopy",
+        ],
+        "POSTPARTUM": [
+            "what is postpartum period",
+            "postpartum recovery tips",
+            "postpartum depression symptoms",
+            "diet after delivery",
+        ],
+        "CONCEPTION": [
+            "what is conception",
+            "how conception happens",
+            "best time for conception",
+            "how long does conception take",
+        ],
+        "EMBRYO_FREEZING": [
+            "what is embryo freezing",
+            "why embryo freezing is done",
+            "how long embryos can be frozen",
+            "is embryo freezing safe",
+        ],
+        "SPERM_FREEZING": [
+            "what is sperm freezing",
+            "how sperm freezing works",
+            "how long sperm can be frozen",
+            "who should freeze sperm",
+        ],
+        "EGG_FREEZING": [
+            "what is egg freezing",
+            "best age for egg freezing",
+            "egg freezing process",
+            "egg freezing success rate",
+        ],
+        "PCOS": [
+            "what is pcos",
+            "pcos symptoms",
+            "pcos treatment",
+            "pcos diet plan",
+            "can pcos cause infertility",
+        ],
+        "PCOD": [
+            "what is pcod",
+            "pcod symptoms",
+            "pcod vs pcos",
+            "pcod treatment",
+        ],
+        "AYURVEDA_TREATMENTS": [
+            "ayurveda treatment for infertility",
+            "ayurvedic remedies for pcos",
+            "is ayurveda safe for fertility",
+            "ayurveda diet for pregnancy",
+        ],
+        "HYSTEROSCOPY": [
+            "what is hysteroscopy",
+            "why hysteroscopy is done",
+            "hysteroscopy recovery time",
+            "is hysteroscopy painful",
+        ],
+        "PREGNANCY": [
+            "early pregnancy symptoms",
+            "pregnancy diet tips",
+            "safe exercises during pregnancy",
+            "pregnancy tests accuracy",
+        ],
+        "SURROGACY": [
+            "what is surrogacy",
+            "surrogacy process",
+            "who needs surrogacy",
+            "is surrogacy legal in india",
+        ],
+        "C_SECTION": [
+            "what is c section",
+            "recovery after c section",
+            "c section vs normal delivery",
+            "when c section is needed",
+        ],
+        "NATURAL_BIRTH": [
+            "what is natural birth",
+            "benefits of normal delivery",
+            "pain relief for natural birth",
+            "preparing for natural delivery",
+        ],
+        "NUTRITION_AND_TESTS": [
+            "nutrition needed for ivf",
+            "fertility blood tests",
+            "hormone tests for pregnancy",
+            "vitamins needed for conception",
+        ],
+        "MEDICATION_AND_EXERCISES": [
+            "fertility medicines for women",
+            "medicines to improve sperm count",
+            "exercises for fertility",
+            "yoga for pregnancy",
+        ],
+    }
     
     MEDICAL_COMPLEX_EXAMPLES = [
         "severe bleeding",
@@ -89,7 +244,7 @@ class ModelGateway:
     
     # Similarity thresholds for routing decisions
     SMALL_TALK_THRESHOLD = 0.75  # High confidence needed for small talk
-    MEDICAL_SIMPLE_THRESHOLD = 0.65  # Moderate confidence for simple medical
+    MEDICAL_SIMPLE_THRESHOLD = 0.60  # Moderate confidence for simple medical
     FACILITY_INFO_THRESHOLD = 0.50  # Lower threshold for facility/location queries to catch more
     
     def __init__(self):
