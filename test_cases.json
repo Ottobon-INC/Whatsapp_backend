@@ -1,0 +1,80 @@
+[
+  {
+    "id": "routing_slm_direct",
+    "query": "hi, how are you?",
+    "expected_route": "slm_direct",
+    "expected_mode": "general",
+    "description": "Simple greeting should route to SLM_DIRECT"
+  },
+  {
+    "id": "routing_slm_rag",
+    "query": "what is ivf treatment",
+    "expected_route": "slm_rag",
+    "expected_mode": "medical",
+    "description": "Simple medical query should route to SLM_RAG"
+  },
+  {
+    "id": "routing_openai_rag",
+    "query": "I have severe bleeding during pregnancy, what should I do?",
+    "expected_route": "openai_rag",
+    "expected_mode": "medical",
+    "description": "Emergency/complex query should route to OPENAI_RAG"
+  },
+  {
+    "id": "language_telugu",
+    "query": "IVF అంటే ఏంటి?",
+    "expected_language": "Telugu",
+    "description": "Telugu query should get Telugu response"
+  },
+  {
+    "id": "language_tinglish",
+    "query": "IVF ante enti",
+    "expected_language": "Tinglish",
+    "description": "Tinglish query should get Tinglish response"
+  },
+  {
+    "id": "context_continuation",
+    "queries": [
+      "What is the cost of IVF?",
+      "And what about IUI?"
+    ],
+    "expected_behavior": "Second query should understand context from first",
+    "description": "Conversation continuity test"
+  },
+  {
+    "id": "facility_info",
+    "query": "Where is the Vizag clinic located?",
+    "expected_route": "slm_rag",
+    "expected_contains": [
+      "address",
+      "location",
+      "Vizag"
+    ],
+    "description": "Facility query should return location info"
+  },
+  {
+    "id": "emotional_support",
+    "query": "I'm feeling very stressed about my fertility journey",
+    "expected_route": "slm_direct",
+    "expected_tone": "empathetic",
+    "description": "Emotional query should get supportive, warm response"
+  },
+  {
+    "id": "rag_accuracy",
+    "query": "What are the symptoms of PCOS?",
+    "expected_contains": [
+      "irregular periods",
+      "weight",
+      "hormonal"
+    ],
+    "description": "Medical query should contain accurate symptoms from KB"
+  },
+  {
+    "id": "followup_format",
+    "query": "What is egg freezing?",
+    "expected_contains": [
+      " Follow ups :"
+    ],
+    "description": "Medical response should include follow-up questions"
+  }
+]

@@ -1,7 +1,7 @@
 # modules/model_gateway.py
 import logging
 from enum import Enum
-from typing import List
+from typing import List, Dict, Union
 import numpy as np
 
 from rag import generate_embedding
@@ -204,6 +204,22 @@ class ModelGateway:
             "exercises for fertility",
             "yoga for pregnancy",
         ],
+        "TREATMENTS_GENERAL": [
+            "what treatments are available",
+            "what are the treatments",
+            "available treatments",
+            "types of treatments",
+            "treatment options",
+            "fertility treatment options",
+            "what treatment should i take",
+            "which treatment is best",
+            "list of treatments",
+            "treatments for infertility",
+            "treatments have",
+            "what treatments do you have",
+            "tell me about treatments",
+            "explain treatments",
+        ],
     }
     
     MEDICAL_COMPLEX_EXAMPLES = [
@@ -259,16 +275,23 @@ class ModelGateway:
         
         logger.info("ModelGateway initialized successfully")
     
-    def _compute_mean_vector(self, examples: List[str]) -> np.ndarray:
+    def _compute_mean_vector(self, examples) -> np.ndarray:
         """
         Compute the mean embedding vector for a list of example texts.
         
         Args:
-            examples: List of example texts for a category
+            examples: List of example texts OR dict with category -> list of examples
             
         Returns:
             Mean embedding vector as numpy array
         """
+        # Handle dictionary input (flatten all values)
+        if isinstance(examples, dict):
+            flat_examples = []
+            for category_examples in examples.values():
+                flat_examples.extend(category_examples)
+            examples = flat_examples
+        
         embeddings = [generate_embedding(example) for example in examples]
         mean_vector = np.mean(embeddings, axis=0)
         return mean_vector
