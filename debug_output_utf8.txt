@@ -1,0 +1,38 @@
+Testing query: 'What is the cost of IVF?'
+
+--- Raw Results ---
+Result 1:
+  Source Type: DOCUMENT
+  YouTube Link: None
+  Infographic URL: None
+  Follow-up Questions: None
+  Keys present: ['section_content', 'header_path', 'similarity', 'source_type']
+--------------------
+Result 2:
+  Source Type: DOCUMENT
+  YouTube Link: None
+  Infographic URL: None
+  Follow-up Questions: None
+  Keys present: ['section_content', 'header_path', 'similarity', 'source_type']
+--------------------
+Result 3:
+  Source Type: DOCUMENT
+  YouTube Link: None
+  Infographic URL: None
+  Follow-up Questions: None
+  Keys present: ['section_content', 'header_path', 'similarity', 'source_type']
+--------------------
+Result 4:
+  Source Type: DOCUMENT
+  YouTube Link: None
+  Infographic URL: None
+  Follow-up Questions: None
+  Keys present: ['section_content', 'header_path', 'similarity', 'source_type']
+--------------------
+Result 5:
+  Source Type: FAQ
+  YouTube Link: https://www.youtube.com/embed/X1M-_Iwki8Y?start=46&end=102
+  Infographic URL: https://sakhi-infographics.s3.ap-south-2.amazonaws.com/images/44.png
+  Follow-up Questions: None
+  Keys present: ['id', 'question', 'answer', 'youtube_link', 'infographic_url', 'similarity', 'source_type']
+--------------------

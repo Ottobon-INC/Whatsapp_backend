@@ -1,0 +1,10 @@
+Registering user at http://127.0.0.1:8000/user/register...
+Registration Status: 200
+Registered user_id: 6714144e-35cd-4f9c-a8ae-cfe68c4dce42
+Sending chat request to http://127.0.0.1:8000/sakhi/chat...
+Chat Status Code: 200
+Response Body:
+{
+  "reply": "Got it. And finally, what's your location (City/Town)? (e.g., Vizag)",
+  "mode": "onboarding"
+}

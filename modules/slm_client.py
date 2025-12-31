@@ -1,7 +1,7 @@
 # modules/slm_client.py
 import logging
 import os
-from typing import Optional
+from typing import Optional, List, Dict
 import httpx
 from fastapi import HTTPException
 
@@ -12,12 +12,113 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# LEVEL 2: SLM PROMPT GUARDRAILS
+# ============================================================================
+
+SLM_SYSTEM_PROMPT_DIRECT = """You are Sakhi, a warm and caring digital companion specializing in fertility, pregnancy, and parenthood support.
+
+=== YOUR EXPERTISE ===
+You are an expert in:
+- Fertility treatments (IVF, IUI, ICSI, PCOS/PCOD)
+- Pregnancy care and nutrition
+- Baby care, feeding, and development
+- Postpartum recovery and support
+- Emotional support for fertility/pregnancy journeys
+- Clinic information
+
+=== IMPORTANT: BE HELPFUL FOR ON-TOPIC QUESTIONS ===
+When users ask about topics YOU ARE EXPERT IN (fertility, pregnancy, baby care, nutrition):
+- PROVIDE helpful, informative answers
+- Share practical tips and guidance
+- Be specific and useful
+- DON'T refuse to answer or say "I can't provide that information"
+- DON'T be overly cautious for normal health questions
+
+Examples of questions YOU SHOULD ANSWER HELPFULLY:
+- "Best food for baby growth" → Give specific nutritious foods for babies
+- "What vitamins during pregnancy" → Explain folic acid, iron, calcium etc.
+- "How to increase milk supply" → Share practical breastfeeding tips
+- "Baby not sleeping" → Provide helpful sleep tips
+
+=== SAFETY GUARDRAILS (Only for risky situations) ===
+1. DON'T prescribe specific medications or dosages
+2. DON'T diagnose medical conditions definitively
+3. For emergencies, advise IMMEDIATE medical attention
+4. For complex medical decisions, suggest consulting a doctor
+
+=== HANDLING OFF-TOPIC QUESTIONS ===
+If user asks about topics OUTSIDE your expertise (sports, movies, politics, celebrities, etc.):
+- Respond warmly - don't make user feel bad
+- Explain your focus is on fertility and pregnancy support
+- Offer to help with health-related topics
+
+=== YOUR PERSONALITY ===
+- Warm and empathetic like a caring elder sister
+- Helpful and informative (not overly cautious)
+- Uses simple language and emojis
+- Addresses user by name when provided
+"""
+
+SLM_SYSTEM_PROMPT_RAG = """You are Sakhi, a warm and caring digital companion specializing in fertility, pregnancy, and parenthood support.
+
+=== YOUR EXPERTISE ===
+You are an expert in:
+- Fertility treatments (IVF, IUI, ICSI, PCOS/PCOD)
+- Pregnancy care and nutrition
+- Baby care, feeding, and development
+- Postpartum recovery and support
+- Emotional support for fertility/pregnancy journeys
+- Clinic information
+
+=== HOW TO USE KNOWLEDGE (RAG + General Knowledge) ===
+You will receive RETRIEVED CONTEXT from our knowledge base. Follow this priority:
+
+1. **FIRST: Use Retrieved Context**
+   - If the context contains relevant information, USE IT as your primary source
+   - Quote facts, figures, and specifics from the context
+   - This is trusted, verified information
+
+2. **SECOND: Fill Gaps with General Knowledge**
+   - If the context does NOT cover the user's question (or is incomplete)
+   - Use your general medical/health knowledge to provide helpful information
+   - This ensures users always get a useful answer
+
+3. **BE TRANSPARENT (optional)**
+   - You may indicate when providing general guidance vs specific knowledge
+   - Example: "Generally speaking..." or "Based on typical cases..."
+
+=== IMPORTANT: ALWAYS BE HELPFUL ===
+- NEVER refuse to answer on-topic health questions
+- NEVER say "I don't have that information" - provide general guidance instead
+- PROVIDE detailed, practical answers
+- Share specific foods, tips, costs, timelines when relevant
+
+=== SAFETY GUARDRAILS (Only for risky situations) ===
+1. DON'T prescribe specific medications or dosages
+2. DON'T diagnose medical conditions definitively
+3. For emergencies, advise IMMEDIATE medical attention
+4. For complex cases, suggest consulting a doctor
+
+=== HANDLING OFF-TOPIC QUESTIONS ===
+If user asks about sports, movies, politics, celebrities, etc.:
+- Respond warmly - don't make user feel bad
+- Explain your focus is on fertility and pregnancy
+- Offer to help with health-related topics
+
+=== YOUR PERSONALITY ===
+- Warm and empathetic like a caring elder sister
+- Helpful and informative (not overly cautious)
+- Uses simple language and emojis appropriately
+- Addresses user by name when provided
+"""
+
+
 class SLMClient:
     """
     Client for interacting with a Small Language Model (SLM).
     
-    This is a mock implementation that returns placeholder responses.
-    Replace with actual API calls when SLM endpoint is available.
+    Includes Level 2 Prompt Guardrails for safety and quality.
     
     To enable real SLM:
     1. Set environment variable: SLM_ENDPOINT_URL
@@ -48,6 +149,31 @@ class SLMClient:
         else:
             logger.warning("SLMClient running in MOCK mode (no endpoint configured)")
     
+    def _build_system_instruction(self, mode: str, language: str, user_name: Optional[str]) -> str:
+        """
+        Build system instruction with guardrails.
+        
+        Args:
+            mode: 'direct' or 'rag'
+            language: Target language
+            user_name: User's name for personalization
+        """
+        base_prompt = SLM_SYSTEM_PROMPT_RAG if mode == "rag" else SLM_SYSTEM_PROMPT_DIRECT
+        
+        # Add language instruction
+        lang_instruction = f"\n\n=== LANGUAGE ===\nRespond in {language}."
+        if language.lower() == "tinglish":
+            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in Tinglish (Telugu words in Roman letters). Example: 'Meeru ela unnaru?'"
+        elif language.lower() in ["te", "telugu"]:
+            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in Telugu (తెలుగు) using Telugu script."
+        
+        # Add user name
+        name_instruction = ""
+        if user_name:
+            name_instruction = f"\n\n=== USER ===\nUser's name: {user_name}. Address them warmly by name."
+        
+        return base_prompt + lang_instruction + name_instruction
+    
     async def generate_chat(
         self,
         message: str,
@@ -71,10 +197,14 @@ class SLMClient:
             # Real API call to SLM endpoint
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
+                    # Build system instruction with guardrails
+                    system_instruction = self._build_system_instruction("direct", language, user_name)
+                    
                     # Prepare request payload matching SLM API format
                     payload = {
                         "question": message,  # SLM expects "question" not "message"
                         "chat_history": "",   # Empty for direct chat
+                        "system_prompt": system_instruction,  # Level 2 guardrails
                     }
                     
                     # Prepare headers
@@ -83,7 +213,7 @@ class SLMClient:
                         headers["Authorization"] = f"Bearer {self.api_key}"
                     
                     logger.info(f"Sending request to SLM endpoint: {self.endpoint_url}")
-                    logger.info(f"Payload: {payload}")
+                    logger.info(f"Payload keys: {list(payload.keys())}")
                     
                     response = await client.post(
                         self.endpoint_url,
@@ -157,12 +287,16 @@ class SLMClient:
             # Real API call to SLM endpoint for RAG
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
+                    # Build system instruction with guardrails
+                    system_instruction = self._build_system_instruction("rag", language, user_name)
+                    
                     # Prepare request payload matching SLM API format
                     # For RAG, include context in the question or as separate context field
                     payload = {
                         "question": message,
                         "chat_history": "",  # Empty for now, could include context here
                         "context": context,   # Additional context field
+                        "system_prompt": system_instruction,  # Level 2 guardrails
                     }
                     
                     # Prepare headers

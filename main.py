@@ -24,6 +24,7 @@ from modules.conversation import save_user_message, save_sakhi_message, get_last
 from modules.user_answers import save_bulk_answers
 from modules.model_gateway import get_model_gateway, Route
 from modules.slm_client import get_slm_client
+from modules.guardrails import get_guardrails
 from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 from modules.lead_manager import handle_lead_flow, _get_chat_state
 
@@ -40,9 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize model gateway and SLM client (singleton instances)
+# Initialize model gateway, SLM client, and guardrails (singleton instances)
 model_gateway = get_model_gateway()
 slm_client = get_slm_client()
+guardrails = get_guardrails()
 
 
 class RegisterRequest(BaseModel):
@@ -253,6 +255,24 @@ async def sakhi_chat(req: ChatRequest):
         pass
 
     # 3. Normal Flow
+    
+    # ===== GUARDRAILS: Detect Intent & Handle Out-of-Scope =====
+    # Check if user is asking about off-topic things (sports, movies, etc.)
+    redirect_response = guardrails.get_redirect_for_out_of_scope(req.message)
+    if redirect_response:
+        # Politely redirect to fertility/pregnancy topics
+        try:
+            save_user_message(user_id, req.message, req.language)
+            save_sakhi_message(user_id, redirect_response, req.language)
+        except:
+            pass
+        return {
+            "reply": redirect_response,
+            "mode": "general",
+            "language": req.language,
+            "intent": "out_of_scope"
+        }
+    
     try:
         save_user_message(user_id, req.message, req.language)
     except Exception as e:
@@ -297,6 +317,9 @@ async def sakhi_chat(req: ChatRequest):
             save_sakhi_message(user_id, final_ans, detected_lang)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
+        
+        # Light cleanup of output
+        final_ans = guardrails.clean_output(final_ans)
         
         return {
             "reply": final_ans,
@@ -351,29 +374,20 @@ async def sakhi_chat(req: ChatRequest):
             "infographic_url": infographic_url,
             "route": "slm_rag"
         }
-        print(f"Response Payload: {response_payload}")
+        
+        # Light cleanup of output
+        response_payload["reply"] = guardrails.clean_output(final_ans)
+        
+        # Safe logging to avoid Unicode errors on Windows console
+        try:
+            print(f"Response Payload: {response_payload}")
+        except UnicodeEncodeError:
+            print(f"Response Payload sent (contains special characters)")
         return response_payload
 
-    # Keep existing small talk logic as fallback (though routing should handle this)
-    if signal != "YES":
-        # Small-talk mode: no RAG
-        try:
-            final_ans = generate_smalltalk_response(
-                req.message,
-                detected_lang,
-                history,
-                user_name=user_name,
-                store_to_kb=False,
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to generate small-talk response: {e}")
-
-        try:
-            save_sakhi_message(user_id, final_ans, detected_lang)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
-
-        return {"reply": final_ans, "mode": "general", "language": detected_lang}
+    # ===== ROUTE 3: OPENAI_RAG (Complex medical, ambiguous, or default queries) =====
+    # Model gateway has already decided this should go to OpenAI RAG
+    # Trust the model gateway decision - don't override with signal check
 
     # ===== ROUTE 3: OPENAI_RAG (Complex medical or default, RAG + GPT-4) =====
     # Medical mode: RAG
@@ -415,7 +429,15 @@ async def sakhi_chat(req: ChatRequest):
         "infographic_url": infographic_url,
         "route": "openai_rag"
     }
-    print(f"Response Payload: {response_payload}")
+    
+    # Light cleanup of output
+    response_payload["reply"] = guardrails.clean_output(final_ans)
+    
+    # Safe logging to avoid Unicode errors on Windows console
+    try:
+        print(f"Response Payload: {response_payload}")
+    except UnicodeEncodeError:
+        print(f"Response Payload sent (contains special characters)")
     return response_payload
 
 
