@@ -1,5 +1,6 @@
 # main.py
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from modules.user_profile import (
@@ -12,6 +13,7 @@ from modules.user_profile import (
     get_user_by_phone,
     create_partial_user,
     update_user_profile,
+    login_user,
 )
 from modules.response_builder import (
     classify_message,
@@ -23,8 +25,20 @@ from modules.user_answers import save_bulk_answers
 from modules.model_gateway import get_model_gateway, Route
 from modules.slm_client import get_slm_client
 from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
+from modules.lead_manager import handle_lead_flow, _get_chat_state
 
 app = FastAPI()
+
+
+
+# CORS Configuration - Allow Replit frontend to call this backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize model gateway and SLM client (singleton instances)
 model_gateway = get_model_gateway()
@@ -39,6 +53,11 @@ class RegisterRequest(BaseModel):
     role: str | None = "USER"
     preferred_language: str | None = None
     user_relation: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 
 class ChatRequest(BaseModel):
@@ -71,6 +90,54 @@ class UpdatePreferredLanguageRequest(BaseModel):
 @app.get("/")
 def home():
     return {"message": "Sakhi API working!"}
+
+
+@app.post("/user/register")
+def register_user(req: RegisterRequest):
+    try:
+        user_row = create_user(
+            name=req.name,
+            email=req.email,
+            phone_number=req.phone_number,
+            password=req.password,
+            role=req.role,
+            preferred_language=req.preferred_language,
+            relation=req.user_relation,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    user_id = user_row.get("user_id")
+
+    return {"status": "success", "user_id": user_id, "user": user_row}
+
+
+@app.post("/user/login")
+def login(req: LoginRequest):
+    """
+    Authenticate user with email and password.
+    """
+    if not req.email or not req.password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    
+    try:
+        user = login_user(req.email, req.password)
+        
+        if user is None:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        return {
+            "status": "success",
+            "user_id": user.get("user_id"),
+            "user": user
+        }
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/user/register")
@@ -164,10 +231,26 @@ async def sakhi_chat(req: ChatRequest):
         )
         
         return {
-            "reply": long_intro, 
             "mode": "onboarding_complete",
             "image": "Sakhi_intro.png"
         }
+
+    # 2.1 Check Lead Feature Flow (/newlead or in-progress)
+    try:
+        # Check separate state table, do NOT rely on user['context']
+        chat_state = _get_chat_state(user_id)
+        if chat_state is None:
+             chat_state = {}
+        
+        # Check if user triggered new lead OR is currently in a lead flow step
+        if msg.lower() == "/newlead" or (chat_state.get("lead_flow") and chat_state["lead_flow"].get("step")):
+             return handle_lead_flow(user_id, msg, user)
+    except Exception as e:
+        print(f"❌ ERROR in Lead Flow: {e}")
+        # Improve error visibility - likely DB schema missing
+        if "sakhi_chat_states" in str(e):
+             print("⚠️ HINT: Did you run setup_leads_strict.sql? The 'sakhi_chat_states' table might be missing.")
+        pass
 
     # 3. Normal Flow
     try:
