@@ -141,3 +141,59 @@ def update_user_profile(user_id: str, updates: dict):
     
     match = f"user_id=eq.{user_id}"
     return supabase_update("sakhi_users", match, updates)
+
+
+def update_user_context(user_id: str, context: dict):
+    """
+    Update the context JSON column for the user.
+    MERGES the new context with the existing one by first fetching.
+    """
+    if not user_id:
+        raise ValueError("user_id is required")
+
+    # Fetch existing
+    profile = get_user_profile(user_id)
+    if not profile:
+        raise ValueError("User not found")
+    
+    current_context = profile.get("context") or {}
+    print(f"DEBUG: Current Context for {user_id}: {current_context}")
+    if not isinstance(current_context, dict):
+        current_context = {}
+    
+    # Merge recursively? No, flat merge for now as per requirement
+    # But lead_flow is a dict. 
+    # If we update {"lead_flow": ...}, it overwrites the key "lead_flow". That is fine.
+    current_context.update(context)
+    
+    match = f"user_id=eq.{user_id}"
+    return supabase_update("sakhi_users", match, {"context": current_context})
+
+
+
+def login_user(email: str, password: str):
+    """
+    Authenticate user by email and password.
+    Returns user profile if credentials are valid, None otherwise.
+    """
+    if not email:
+        raise ValueError("email is required")
+    if not password:
+        raise ValueError("password is required")
+    
+    # Fetch user by email
+    rows = supabase_select("sakhi_users", select="*", filters=f"email=eq.{email}")
+    
+    if not rows or not isinstance(rows, list) or len(rows) == 0:
+        return None
+    
+    user = rows[0]
+    
+    # Check password
+    stored_password = user.get("password_hash")
+    
+    if stored_password != password:
+        return None
+    
+    # Authentication successful
+    return user
