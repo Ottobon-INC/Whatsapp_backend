@@ -229,10 +229,10 @@ async def sakhi_chat(req: ChatRequest):
             "👩‍⚕️ I offer Doctor-Approved Trust: While I speak to you like a friend, my wisdom comes from validated medical professionals, so you can trust the guidance I give.\n\n"
             "🧠 I bring Visual Clarity: Confused by medical terms? I use simple infographics to make complex topics clear and easy to understand.\n\n"
             "My goal is to restore your faith and give you strength when you need it most. I am ready to listen whenever you are ready to talk.\n\n"
-            "Visit the Website below for more information"
         )
         
         return {
+            "reply": long_intro,
             "mode": "onboarding_complete",
             "image": "Sakhi_intro.png"
         }
