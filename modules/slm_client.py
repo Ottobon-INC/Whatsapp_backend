@@ -16,48 +16,64 @@ logger = logging.getLogger(__name__)
 # LEVEL 2: SLM PROMPT GUARDRAILS
 # ============================================================================
 
-SLM_SYSTEM_PROMPT_DIRECT = """You are Sakhi, a warm and caring digital companion specializing in fertility, pregnancy, and parenthood support.
+SLM_SYSTEM_PROMPT_DIRECT = """You are Sakhi, a compassionate, expert Fertility Health Companion. You are not a robot; you are a supportive friend (like a caring "Akka") who simplifies complex medical terms.
 
 === YOUR EXPERTISE ===
-You are an expert in:
-- Fertility treatments (IVF, IUI, ICSI, PCOS/PCOD)
+- Fertility treatments (IVF, IUI, ICSI)
 - Pregnancy care and nutrition
-- Baby care, feeding, and development
-- Postpartum recovery and support
-- Emotional support for fertility/pregnancy journeys
-- Clinic information
+- Baby care
 
-=== IMPORTANT: BE HELPFUL FOR ON-TOPIC QUESTIONS ===
-When users ask about topics YOU ARE EXPERT IN (fertility, pregnancy, baby care, nutrition):
-- PROVIDE helpful, informative answers
-- Share practical tips and guidance
-- Be specific and useful
-- DON'T refuse to answer or say "I can't provide that information"
-- DON'T be overly cautious for normal health questions
+=== LANGUAGE RULES: NATURAL TELUGU (TANGLISH) ===
+**CRITICAL:** When the user speaks Telugu, you must respond in **Colloquial Spoken Telugu** mixed with English (Tanglish).
 
-Examples of questions YOU SHOULD ANSWER HELPFULLY:
-- "Best food for baby growth" → Give specific nutritious foods for babies
-- "What vitamins during pregnancy" → Explain folic acid, iron, calcium etc.
-- "How to increase milk supply" → Share practical breastfeeding tips
-- "Baby not sleeping" → Provide helpful sleep tips
+1. **NO BOOKISH TRANSLATIONS:** - NEVER use direct Google Translate style phrases.
+   - **Bad:** "Kshanam kshanam" (for step-by-step). **Good:** "Step-by-step" or "Vivaranga".
+   - **Bad:** "Ante how much". **Good:** "Entha" or "Total cost entha".
+   - **Bad:** "Shukranu". **Good:** "Sperm".
 
-=== SAFETY GUARDRAILS (Only for risky situations) ===
-1. DON'T prescribe specific medications or dosages
-2. DON'T diagnose medical conditions definitively
-3. For emergencies, advise IMMEDIATE medical attention
-4. For complex medical decisions, suggest consulting a doctor
+2. **MIX ENGLISH NATURALLY:** - Use English for: *Doctor, Scan, Injection, Period, Cycle, Pain, Egg, Sperm, Embryo, Success Rate, Cost, Process.*
+   - Use Telugu for verbs and grammar.
 
-=== HANDLING OFF-TOPIC QUESTIONS ===
-If user asks about topics OUTSIDE your expertise (sports, movies, politics, celebrities, etc.):
-- Respond warmly - don't make user feel bad
-- Explain your focus is on fertility and pregnancy support
-- Offer to help with health-related topics
+=== IF YOU GENERATE FOLLOW-UP QUESTIONS ===
+If you suggest questions for the user to ask, they MUST sound like a real native speaker on WhatsApp.
+* **Cost:** "Deeni cost **entha** avtundi?" (Not "Cost how much")
+* **Process:** "Process **step-by-step** cheppandi." (Not "Kshanam kshanam")
+* **Time:** "Entha **time** padutundi?"
+* **Pain:** "Idi **painful** ga untunda?"
 
-=== YOUR PERSONALITY ===
-- Warm and empathetic like a caring elder sister
-- Helpful and informative (not overly cautious)
-- Uses simple language and emojis
-- Addresses user by name when provided
+=== EXAMPLES OF STYLE ===
+* **User:** "Cost?"
+    **You:** "Cost **entha** anedi mee reports batti untundi. Usually 1.5 Lakhs varaku avtundi."
+    
+* **User:** "Process enti?"
+    **You:** "Simple ga cheppalante... **Sperm** inka **Egg** ni lab lo kalipi **Embryo** tayaru chestaru. Idi safe **process**."
+
+=== SAFETY ===
+1. DON'T prescribe meds.
+2. Always say: "Please consult your **doctor**."
+
+
+=== IMPORTANT: BE HELPFUL & EMPATHETIC ===
+- **Validate First:** If the user is worried, say "Don't worry" (*Tension padakandi*) first.
+- **Explain Simply:** Break down IVF/IUI steps into simple logic.
+- **Direct Answers:** Don't beat around the bush. Address the user as "Meeru".
+
+=== SAFETY GUARDRAILS ===
+1. DON'T prescribe specific medications or dosages.
+2. DON'T diagnose medical conditions definitively.
+3. Always end medical advice with: "Better okasari mee **doctor** ni consult avvandi."
+
+=== HANDLING OFF-TOPIC ===
+If user asks about movies/politics: "Sorry! Nenu only **health** gurinchi matladagalanu.
+=== EXAMPLES OF STYLE (STRICTLY FOLLOW THIS) ===
+
+* **Bad (Too Formal):** "Garbhashayamulo shukranulanu praveshapettadam dwara IUI jaruguthundi."
+* **Good (Sakhi Style):** "Simple ga cheppalante... **IUI** lo doctor **sperm** ni clean chesi, direct ga mee **uterus** lo **inject** chestaru. Idi chala chinna **process**."
+
+* **Bad (Too Formal):** "Meeru bhayapadavalasina avasaram ledu."
+* **Good (Sakhi Style):** "Meeru asalu **tension** padakandi. Idi chala **common** vishayam."
+If user asks about movies/politics:
+- "Sorry andi! Nenu only **health** and **pregnancy** gurinchi matrame matladagalanu. Deeni gurinchi emaina doubts unte adagandi."
 """
 
 SLM_SYSTEM_PROMPT_RAG = """You are Sakhi, a warm and caring digital companion specializing in fertility, pregnancy, and parenthood support.
@@ -165,7 +181,7 @@ class SLMClient:
         if language.lower() == "tinglish":
             lang_instruction = "\n\n=== LANGUAGE ===\nRespond in Tinglish (Telugu words in Roman letters). Example: 'Meeru ela unnaru?'"
         elif language.lower() in ["te", "telugu"]:
-            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in Telugu (తెలుగు) using Telugu script."
+            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in TELUGU (Tanglish style as per instructions). Do NOT use formal Telugu."
         
         # Add user name
         name_instruction = ""
@@ -201,10 +217,17 @@ class SLMClient:
                     system_instruction = self._build_system_instruction("direct", language, user_name)
                     
                     # Prepare request payload matching SLM API format
+                    # We inject the specific persona instructions again in the payload to ensure adherence
+                    final_question = f"""
+                    {system_instruction}
+                    
+                    USER MESSAGE:
+                    {message}
+                    """
+
                     payload = {
-                        "question": message,  # SLM expects "question" not "message"
+                        "question": final_question,  # SLM expects "question" not "message"
                         "chat_history": "",   # Empty for direct chat
-                        "system_prompt": system_instruction,  # Level 2 guardrails
                     }
                     
                     # Prepare headers
@@ -213,7 +236,6 @@ class SLMClient:
                         headers["Authorization"] = f"Bearer {self.api_key}"
                     
                     logger.info(f"Sending request to SLM endpoint: {self.endpoint_url}")
-                    logger.info(f"Payload keys: {list(payload.keys())}")
                     
                     response = await client.post(
                         self.endpoint_url,
@@ -249,10 +271,8 @@ class SLMClient:
         # Mock implementation (fallback if no endpoint)
         greeting = f"Hi {user_name}! " if user_name else "Hi! "
         mock_response = (
-            f"{greeting}This is a mock SLM response for direct chat. "
-            f"You said: '{message}'. "
-            f"In production, this would be generated by the Small Language Model. "
-            f"[Language: {language}]"
+            f"{greeting} (Mock Response) Meeru adigina '{message}' gurinchi simple ga cheppalante... "
+            f"Manam **IVF** process lo doctors help teesukovachu. Meeru **tension** padakandi. [Language: {language}]"
         )
         
         # Truncate response to maximum 1024 characters
@@ -290,13 +310,19 @@ class SLMClient:
                     # Build system instruction with guardrails
                     system_instruction = self._build_system_instruction("rag", language, user_name)
                     
-                    # Prepare request payload matching SLM API format
-                    # For RAG, include context in the question or as separate context field
+                    final_question = f"""
+                    {system_instruction}
+                    
+                    CONTEXT INFORMATION:
+                    {context}
+                    
+                    USER MESSAGE:
+                    {message}
+                    """
+                    
                     payload = {
-                        "question": message,
-                        "chat_history": "",  # Empty for now, could include context here
-                        "context": context,   # Additional context field
-                        "system_prompt": system_instruction,  # Level 2 guardrails
+                        "question": final_question,
+                        "chat_history": "",
                     }
                     
                     # Prepare headers
@@ -305,8 +331,6 @@ class SLMClient:
                         headers["Authorization"] = f"Bearer {self.api_key}"
                     
                     logger.info(f"Sending RAG request to SLM endpoint: {self.endpoint_url}")
-                    logger.info(f"Question: {message[:100]}...")
-                    logger.info(f"Context length: {len(context)} characters")
                     
                     response = await client.post(
                         self.endpoint_url,
@@ -342,11 +366,8 @@ class SLMClient:
         # Mock implementation (fallback if no endpoint)
         greeting = f"Hello {user_name}, " if user_name else "Hello, "
         mock_response = (
-            f"{greeting}this is a mock SLM RAG response. "
-            f"You asked: '{message}'. "
-            f"I found {len(context)} characters of relevant context. "
-            f"In production, the SLM would use this context to provide an informed answer. "
-            f"[Language: {language}]"
+            f"{greeting} (Mock RAG) Meeru adigina '{message}' gurinchi info dorikindi. "
+            f"General ga **success rate** bagane untundi. [Language: {language}]"
         )
         
         # Truncate response to maximum 1024 characters

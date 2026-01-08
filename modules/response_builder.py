@@ -1,3 +1,5 @@
+
+
 # modules/response_builder.py
 import os
 from typing import List, Optional, Dict, Tuple
@@ -119,14 +121,31 @@ def generate_smalltalk_response(
         "If this is a follow-up, do NOT say 'Hi' again; instead give a brief caring acknowledgement with the name (e.g., '<name>, I'm here for you.'). "
         "If no usable name, use a gentle greeting without a name."
     )
+    # Language Instruction Construction
+    lang_lower = target_lang.lower()
+    if lang_lower in ["telugu", "te"]:
+        language_instruction = (
+            "Respond in **Colloquial Spoken Telugu (Tanglish)**.\n"
+            "Use English for medical terms (e.g., Doctor, Scan, Pain, Meds) and Telugu for grammar.\n"
+            "Do NOT use formal/bookish Telugu script.\n"
+            "Example: 'Meeru tension padakandi, idi common problem.'\n"
+        )
+    elif lang_lower == "tinglish":
+        language_instruction = (
+            "Respond in **Tinglish** (Telugu words using Roman letters).\n"
+            "Do not switch to pure English.\n"
+            "Example: 'Meeru ela unnaru?'\n"
+        )
+    else:
+        language_instruction = f"Match the language of the user prompt: respond ONLY in {target_lang}.\n"
+
     system_content = (
         "You are Sakhi, an emotional south indian companion.\n"
         "User is NOT asking medical questions.\n"
         "Give a warm, supportive, friendly, empathetic reply.\n"
         "Avoid medical or fertility information completely.\n"
         f"{greeting_rule}\n"
-        "Match the language of the user prompt: respond ONLY in target_lang. "
-        "If target_lang is Tinglish, write Telugu words using Roman letters; do not switch to English.\n"
+        f"{language_instruction}"
         "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
         "Keep the tone conversational like two people chatting; avoid headings or bullet labels. Use full stops/commas naturally.\n"
         f"{name_line}\n"
@@ -176,6 +195,25 @@ def generate_medical_response(
         "If this is a follow-up, do NOT say 'Hi' again; instead give a brief caring acknowledgement with the name (e.g., '<name>, I understand.'). "
         "If no usable name, use a gentle greeting without a name."
     )
+        
+    # Language Instruction Construction
+    lang_lower = target_lang.lower()
+    if lang_lower in ["telugu", "te"]:
+        language_instruction = (
+            "Respond in **Colloquial Spoken Telugu (Tanglish)**.\n"
+            "Use English for medical terms (e.g., Doctor, Scan, Pain, Meds) and Telugu for grammar.\n"
+            "Do NOT use formal/bookish Telugu script.\n"
+            "Example: 'Meeru tension padakandi, idi common problem.'\n"
+        )
+    elif lang_lower == "tinglish":
+        language_instruction = (
+            "Respond in **Tinglish** (Telugu words using Roman letters).\n"
+            "Do not switch to pure English.\n"
+            "Example: 'Meeru ela unnaru?'\n"
+        )
+    else:
+        language_instruction = f"Match the language of the user prompt: respond ONLY in {target_lang}.\n"
+
     system_content = (
         "You are Sakhi, a warm emotional south indian companion but medically safe.\n"
         "\n"
@@ -192,8 +230,7 @@ def generate_medical_response(
         "3. ALWAYS BE HELPFUL: Users should always get a useful, caring response\n"
         "\n"
         f"{greeting_rule}\n"
-        "Match the language of the user prompt: respond ONLY in target_lang. "
-        "If target_lang is Tinglish, write Telugu words using Roman letters; do not switch to English.\n"
+        f"{language_instruction}"
         "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
         "\n"
         "MANDATORY RESPONSE STRUCTURE:\n"
@@ -207,6 +244,8 @@ def generate_medical_response(
         "- Generate 3 DYNAMIC follow-up questions that are DIRECTLY RELEVANT to your main reply.\n"
         "- Questions must help the user explore the topic deeper or clarify related concerns.\n"
         "- DO NOT use generic or static questions like 'What is your first question?'.\n"
+        "- **CRITICAL**: Check the conversation history above. DO NOT repeat any question that has already been asked or suggested.\n"
+        "- If the user just asked about Cost, do NOT ask about Cost again. Ask about Success Rate or Procedure instead.\n"
         "- Each question should be specific to the medical/fertility topic discussed.\n"
         "\n"
         "EXAMPLE FORMAT (questions are just examples, yours must be contextual):\n"
