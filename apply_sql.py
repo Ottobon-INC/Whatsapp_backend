@@ -10,7 +10,12 @@ if not DB_URL:
     print("❌ DATABASE_URL or SUPABASE_DB_URL not found in .env")
     exit(1)
 
-SQL_FILE = "setup_leads.sql"
+import sys
+
+if len(sys.argv) > 1:
+    SQL_FILE = sys.argv[1]
+else:
+    SQL_FILE = "setup_leads.sql"
 
 if not os.path.exists(SQL_FILE):
     print(f"❌ {SQL_FILE} not found")

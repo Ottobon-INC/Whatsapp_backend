@@ -125,10 +125,26 @@ def generate_smalltalk_response(
     lang_lower = target_lang.lower()
     if lang_lower in ["telugu", "te"]:
         language_instruction = (
-            "Respond in **Colloquial Spoken Telugu (Tanglish)**.\n"
-            "Use English for medical terms (e.g., Doctor, Scan, Pain, Meds) and Telugu for grammar.\n"
-            "Do NOT use formal/bookish Telugu script.\n"
-            "Example: 'Meeru tension padakandi, idi common problem.'\n"
+            "Respond in **Colloquial Spoken Telugu** (Vyavaharika Bhasha) using **Telugu Script**.\n"
+            "Use natural, conversational Telugu as spoken in daily life, NOT formal bookish Telugu (Granthika Bhasha).\n"
+            "CRITICAL: Do NOT use complex formal Telugu words like 'శస్త్రచికిత్స', 'గర్భధారణ', 'అండాలు', 'శుక్రాణువు', 'సంతులనానికి', 'పౌష్టికాహారం', 'కృత్రిమ', 'కంట్రాక్షన్స్', 'చొప్పిస్తుంది', 'చొప్పించు', 'అడ్డుకట్ట', 'ఉత్పత్తి'.\n"
+            "NEVER use the word 'అడ్డుకట్ట' (Obstacles) or 'ఉత్పత్తి' (Production).\n"
+            "INSTEAD, use English words written in Telugu script: \n"
+            "   - 'Surgery' -> 'సర్జరీ'\n"
+            "   - 'Pregnancy' -> 'ప్రెగ్నెన్సీ'\n"
+            "   - 'Eggs' -> 'ఎగ్స్'\n"
+            "   - 'Sperm' -> 'స్పెర్మ్'\n"
+            "   - 'Balance' -> 'బ్యాలెన్స్'\n"
+            "   - 'Diet' -> 'డైట్'\n"
+            "   - 'Artificial' -> 'ఆర్టిఫిషియల్' (or simple Telugu like 'సహజంగా')\n"
+            "   - 'Contractions' -> 'ప్రాబ్లమ్స్' (Problems) or 'నొప్పి' (Pain)\n"
+            "   - 'Obstacles' -> 'ప్రాబ్లమ్స్' (Problems) or 'ఇబ్బందులు'\n"
+            "   - 'Production' -> 'తయారు' (Make) or 'రిలీజ్' (Release)\n"
+            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
+            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
+            "Use English words for ALL medical/technical terms (e.g., Doctor, Scan, Pain, Treatment, Problem, Period, Embryo, Fertile, Balance, Diet, Artificial) written in **Telugu script**.\n"
+            "Ensure ALL spelling is grammatically correct in Telugu script.\n"
+            "Example: 'మీరు టెన్షన్ పడకండి, ఇది కామన్ ప్రాబ్లమ్. డాక్టరు గారిని కలవండి.'\n"
         )
     elif lang_lower == "tinglish":
         language_instruction = (
@@ -200,10 +216,26 @@ def generate_medical_response(
     lang_lower = target_lang.lower()
     if lang_lower in ["telugu", "te"]:
         language_instruction = (
-            "Respond in **Colloquial Spoken Telugu (Tanglish)**.\n"
-            "Use English for medical terms (e.g., Doctor, Scan, Pain, Meds) and Telugu for grammar.\n"
-            "Do NOT use formal/bookish Telugu script.\n"
-            "Example: 'Meeru tension padakandi, idi common problem.'\n"
+            "Respond in **Colloquial Spoken Telugu** (Vyavaharika Bhasha) using **Telugu Script**.\n"
+            "Use natural, conversational Telugu as spoken in daily life, NOT formal bookish Telugu (Granthika Bhasha).\n"
+            "CRITICAL: Do NOT use complex formal Telugu words like 'శస్త్రచికిత్స', 'గర్భధారణ', 'అండాలు', 'శుక్రాణువు', 'సంతులనానికి', 'పౌష్టికాహారం', 'కృత్రిమ', 'కంట్రాక్షన్స్', 'చొప్పిస్తుంది', 'చొప్పించు', 'అడ్డుకట్ట', 'ఉత్పత్తి'.\n"
+            "NEVER use the word 'అడ్డుకట్ట' (Obstacles) or 'ఉత్పత్తి' (Production).\n"
+            "INSTEAD, use English words written in Telugu script: \n"
+            "   - 'Surgery' -> 'సర్జరీ'\n"
+            "   - 'Pregnancy' -> 'ప్రెగ్నెన్సీ'\n"
+            "   - 'Eggs' -> 'ఎగ్స్'\n"
+            "   - 'Sperm' -> 'స్పెర్మ్'\n"
+            "   - 'Balance' -> 'బ్యాలెన్స్'\n"
+            "   - 'Diet' -> 'డైట్'\n"
+            "   - 'Artificial' -> 'ఆర్టిఫిషియల్' (or simple Telugu like 'సహజంగా')\n"
+            "   - 'Contractions' -> 'ప్రాబ్లమ్స్' (Problems) or 'నొప్పి' (Pain)\n"
+            "   - 'Obstacles' -> 'ప్రాబ్లమ్స్' (Problems) or 'ఇబ్బందులు'\n"
+            "   - 'Production' -> 'తయారు' (Make) or 'రిలీజ్' (Release)\n"
+            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
+            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
+            "Use English words for ALL medical/technical terms (e.g., Doctor, Scan, Pain, Treatment, Problem, Period, Embryo, Fertile, Balance, Diet, Artificial) written in **Telugu script**.\n"
+            "Ensure ALL spelling is grammatically correct in Telugu script.\n"
+            "Example: 'మీరు టెన్షన్ పడకండి, ఇది కామన్ ప్రాబ్లమ్. డాక్టరు గారిని కలవండి.'\n"
         )
     elif lang_lower == "tinglish":
         language_instruction = (
@@ -258,7 +290,8 @@ def generate_medical_response(
         "CRITICAL: Do NOT add blank lines after ' Follow ups : ' - the first question must appear immediately.\n"
         "IMPORTANT: Each follow-up question MUST be under 65 characters long.\n"
         "IMPORTANT: Questions must be CONTEXTUAL to your reply, NOT static placeholders.\n"
-        f"Always answer in {target_lang}.\n"
+        "IMPORTANT: Questions must be CONTEXTUAL to your reply, NOT static placeholders.\n"
+        f"Always answer in {target_lang}. If Telugu, use colloquial (Vyavaharika) style for questions too.\n"
         f"{name_line}\n"
         "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
         "Maintain continuity using the conversation history.\n"

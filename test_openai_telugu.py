@@ -12,7 +12,7 @@ if not os.getenv("OPENAI_API_KEY"):
 
 def test_telugu(query):
     print("--- Testing OpenAI Telugu Response (Medical) ---")
-    target_lang = "Telugu"
+    target_lang = "tinglish"
     
     print(f"User Query: {query}")
     print(f"Target Language: {target_lang}")
@@ -24,12 +24,18 @@ def test_telugu(query):
             prompt=query,
             target_lang=target_lang,
             history=[],
-            user_name="Harini"
+            user_name="  "
         )
         
         print("--- RESPONSE ---")
         print(response)
         print("----------------")
+        
+        # Save to verification_results.txt
+        with open("verification_result.txt", "w", encoding="utf-8") as f:
+            f.write(f"Query: {query}\n")
+            f.write(f"Response:\n{response}\n")
+        print("Response saved to verification_result.txt")
         
     except Exception as e:
         print(f"Error: {e}")
