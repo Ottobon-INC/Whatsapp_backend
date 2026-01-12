@@ -24,9 +24,14 @@ You are a Digital South Indian Nurse Chatbot.
 
 Your task:
 1. Detect the language of the user's message. The input may be:
-   - Telugu
-   - English
-   - Tinglish (Telugu written in Roman alphabet)
+   - Telugu (uses Telugu script like: మీరు, ఎలా, ఉన్నారు, నాకు)
+   - Tinglish (Telugu words in ROMAN/ENGLISH alphabet like: meeru, ela, unnaru, entha, cheppandi)
+   - English (pure English words and sentences)
+
+IMPORTANT SCRIPT DISTINCTION:
+- If the message contains Telugu script characters (ా, ి, ు, ె, ో, etc.) → Output "Telugu"
+- If the message contains Telugu words written in ENGLISH/ROMAN letters → Output "Tinglish"
+- If the message is pure English → Output "English"
 
 2. Translate the message internally into English for analysis, but always respond in the user’s identified language.
 
@@ -36,10 +41,16 @@ Your task:
 
 4. Output MUST include ONLY:
 
-Identified Language: <language>
+Identified Language: <EXACTLY one of: English, Telugu, Tinglish>
 
 General Output:
 [SIGNAL]: YES or NO
+
+EXAMPLES:
+- "IVF cost entha?" → Identified Language: Tinglish
+- "Meeru ela unnaru?" → Identified Language: Tinglish
+- "నాకు IVF గురించి చెప్పండి" → Identified Language: Telugu
+- "What is IVF success rate?" → Identified Language: English
 """
 
 
@@ -71,8 +82,27 @@ def classify_message(message: str) -> Dict[str, str]:
             if len(parts) == 2:
                 signal = parts[1].strip().upper()
 
+    # Normalize language output to handle variations
+    lang_lower = language.lower().strip()
+    if "tinglish" in lang_lower or "tanglish" in lang_lower or "roman" in lang_lower:
+        language = "Tinglish"
+    elif "telugu" in lang_lower or lang_lower == "te":
+        language = "Telugu"
+    elif "english" in lang_lower or lang_lower == "en":
+        language = "English"
+    else:
+        language = "English"  # Default fallback
+
+    # CRITICAL: Programmatic script detection override
+    # Telugu Unicode range: \u0C00-\u0C7F
+    # If LLM says "Telugu" but message has NO Telugu script characters, it's Tinglish
+    has_telugu_script = any('\u0C00' <= char <= '\u0C7F' for char in message)
+    
+    if language == "Telugu" and not has_telugu_script:
+        language = "Tinglish"  # Roman Telugu = Tinglish
+
     return {
-        "language": language or "en",
+        "language": language,
         "signal": signal or "NO",
     }
 
@@ -146,7 +176,7 @@ def generate_smalltalk_response(
             "Ensure ALL spelling is grammatically correct in Telugu script.\n"
             "Example: 'మీరు టెన్షన్ పడకండి, ఇది కామన్ ప్రాబ్లమ్. డాక్టరు గారిని కలవండి.'\n"
         )
-    elif lang_lower == "tinglish":
+    elif lang_lower == "tinglish" or lang_lower == "tanglish":
         language_instruction = (
             "Respond in **Tinglish** (Telugu words using Roman letters).\n"
             "Do not switch to pure English.\n"
@@ -237,7 +267,7 @@ def generate_medical_response(
             "Ensure ALL spelling is grammatically correct in Telugu script.\n"
             "Example: 'మీరు టెన్షన్ పడకండి, ఇది కామన్ ప్రాబ్లమ్. డాక్టరు గారిని కలవండి.'\n"
         )
-    elif lang_lower == "tinglish":
+    elif lang_lower == "tinglish" or lang_lower == "tanglish":
         language_instruction = (
             "Respond in **Tinglish** (Telugu words using Roman letters).\n"
             "Do not switch to pure English.\n"

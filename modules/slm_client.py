@@ -178,10 +178,10 @@ class SLMClient:
         
         # Add language instruction
         lang_instruction = f"\n\n=== LANGUAGE ===\nRespond in {language}."
-        if language.lower() == "tinglish":
-            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in Tinglish (Telugu words in Roman letters). Example: 'Meeru ela unnaru?'"
+        if language.lower() == "tinglish" or language.lower() == "tanglish":
+            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in Tinglish (Telugu words in Roman/English letters). Example: 'Meeru ela unnaru?' Do NOT use Telugu script."
         elif language.lower() in ["te", "telugu"]:
-            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in TELUGU (Tanglish style as per instructions). Do NOT use formal Telugu."
+            lang_instruction = "\n\n=== LANGUAGE ===\nRespond in TELUGU SCRIPT (Telugu script like మీరు, ఎలా). Use colloquial spoken Telugu, not formal bookish Telugu."
         
         # Add user name
         name_instruction = ""
