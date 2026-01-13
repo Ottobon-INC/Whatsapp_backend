@@ -19,6 +19,9 @@ from modules.response_builder import (
     classify_message,
     generate_medical_response,
     generate_smalltalk_response,
+    contains_telugu_unicode,
+    is_mostly_english,
+    force_rewrite_to_tinglish,
 )
 from modules.conversation import save_user_message, save_sakhi_message, get_last_messages
 from modules.user_answers import save_bulk_answers
@@ -286,9 +289,17 @@ async def sakhi_chat(req: ChatRequest):
         classification = classify_message(req.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to classify message: {e}")
-
-    detected_lang = classification.get("language", req.language)
+    # STEP: Decide FINAL response language (single source of truth)
+    detected_lang = classification.get("language", "en").lower()
     signal = classification.get("signal", "NO")
+
+    if detected_lang == "tinglish":
+        target_lang = "Tinglish"   # respond in Tinglish
+    elif detected_lang in ["telugu", "te"]:
+        target_lang = "Telugu"
+    else:
+        target_lang = "English"
+
 
     # Fetch user name for personalization
     user_name = None
@@ -296,8 +307,13 @@ async def sakhi_chat(req: ChatRequest):
         profile = get_user_profile(user_id)
         if profile:
             user_name = profile.get("name")
-    except Exception:
+            if user_name and not user_name.strip():
+                user_name = None
+    except Exception as e:
+        print(f"DEBUGGING ERROR: Failed to fetch profile for name: {e}")
         user_name = None
+
+    print(f"DEBUG: Final user_name passed to LLM: '{user_name}'")
 
     # Conversation history for both modes
     history = get_last_messages(user_id, limit=5)
@@ -307,24 +323,34 @@ async def sakhi_chat(req: ChatRequest):
         try:
             final_ans = await slm_client.generate_chat(
                 message=req.message,
-                language=detected_lang,
+                language=target_lang,
                 user_name=user_name,
             )
+
+            # HARD ENFORCEMENT: Tinglish check for SLM
+            if target_lang.lower() == "tinglish":
+                 if contains_telugu_unicode(final_ans) or is_mostly_english(final_ans):
+                     print("⚠️ SLM Validation Failure. Forcing Rewrite.")
+                     final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM chat response: {e}")
         
         try:
-            save_sakhi_message(user_id, final_ans, detected_lang)
+            save_sakhi_message(user_id, final_ans, target_lang)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
         
         # Light cleanup of output
         final_ans = guardrails.clean_output(final_ans)
         
+        # NUCLEAR CLEANUP for specific banned words
+        import re
+        final_ans = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', final_ans).strip()
+
         return {
             "reply": final_ans,
             "mode": "general",
-            "language": detected_lang,
+            "language": target_lang,
             "route": "slm_direct"
         }
     
@@ -342,14 +368,20 @@ async def sakhi_chat(req: ChatRequest):
             final_ans = await slm_client.generate_rag_response(
                 context=context_text,
                 message=req.message,
-                language=detected_lang,
+                language=target_lang,
                 user_name=user_name,
             )
+
+            # HARD ENFORCEMENT: Tinglish check for SLM
+            if target_lang.lower() == "tinglish":
+                 if contains_telugu_unicode(final_ans) or is_mostly_english(final_ans):
+                     print("⚠️ SLM Validation Failure. Forcing Rewrite.")
+                     final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM RAG response: {e}")
         
         try:
-            save_sakhi_message(user_id, final_ans, detected_lang)
+            save_sakhi_message(user_id, final_ans, target_lang)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
         
@@ -369,14 +401,19 @@ async def sakhi_chat(req: ChatRequest):
         response_payload = {
             "reply": final_ans,
             "mode": "medical",
-            "language": detected_lang,
+            "language": target_lang,
             "youtube_link": youtube_link,
             "infographic_url": infographic_url,
             "route": "slm_rag"
         }
         
         # Light cleanup of output
-        response_payload["reply"] = guardrails.clean_output(final_ans)
+        cleaned_reply = guardrails.clean_output(final_ans)
+        
+        # NUCLEAR CLEANUP
+        import re
+        cleaned_reply = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', cleaned_reply).strip()
+        response_payload["reply"] = cleaned_reply
         
         # Safe logging to avoid Unicode errors on Windows console
         try:
@@ -394,7 +431,7 @@ async def sakhi_chat(req: ChatRequest):
     try:
         final_ans, _kb = generate_medical_response(
             prompt=req.message,
-            target_lang=detected_lang,
+            target_lang=target_lang,
             history=history,
             user_name=user_name,
         )
@@ -402,7 +439,7 @@ async def sakhi_chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Failed to generate medical response: {e}")
 
     try:
-        save_sakhi_message(user_id, final_ans, detected_lang)
+        save_sakhi_message(user_id, final_ans, target_lang)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save Sakhi message: {e}")
 
@@ -424,7 +461,7 @@ async def sakhi_chat(req: ChatRequest):
     response_payload = {
         "reply": final_ans, 
         "mode": "medical", 
-        "language": detected_lang,
+        "language": target_lang,
         "youtube_link": youtube_link,
         "infographic_url": infographic_url,
         "route": "openai_rag"

@@ -2,12 +2,12 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
-DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or os.getenv("IGCCSVC_DB_URL")
 
 if not DB_URL:
-    print("❌ DATABASE_URL or SUPABASE_DB_URL not found in .env")
+    print("❌ DATABASE_URL, SUPABASE_DB_URL, or IGCCSVC_DB_URL not found in .env")
     exit(1)
 
 import sys

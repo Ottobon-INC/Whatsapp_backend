@@ -16,7 +16,7 @@ def _ensure_env_loaded() -> None:
     global _ENV_LOADED
     if _ENV_LOADED:
         return
-    load_dotenv()
+    load_dotenv(override=True)
     _ENV_LOADED = True
 
 
