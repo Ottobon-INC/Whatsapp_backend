@@ -7,6 +7,7 @@ TELUGU_GRAMMAR_MARKERS = (
     "emaina", "enti", "ela", "enduku",
     "ni", "ki", "lo", "ga",
     "undi", "ledu", "untaya",
+    "chestunda", "emina", 
     "chestha", "chesthundha", "cheyali", "vellali", "entha"
 )
 
