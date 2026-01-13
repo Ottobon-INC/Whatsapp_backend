@@ -8,3 +8,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+test_lang_flow.py
+test_response_builder.py
+test_tokenization.py
+test_verify_lang.py

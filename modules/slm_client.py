@@ -183,10 +183,10 @@ class SLMClient:
         elif language.lower() in ["te", "telugu"]:
             lang_instruction = "\n\n=== LANGUAGE ===\nRespond in TELUGU (Tanglish style as per instructions). Do NOT use formal Telugu."
         
-        # Add user name
-        name_instruction = ""
         if user_name:
-            name_instruction = f"\n\n=== USER ===\nUser's name: {user_name}. Address them warmly by name."
+            name_instruction = f"\n\n=== USER ===\nUser's name: {user_name}. Address them as '{user_name}'. Do NOT change their name. Do NOT use generic terms like 'Aayi', 'Amma', 'Talli', or 'Sister'."
+        else:
+            name_instruction = "\n\n=== USER ===\nUser's name is UNKNOWN. Do NOT address them by any name. Do NOT use 'Aayi', 'Amma', 'Friend'. Just start the response."
         
         return base_prompt + lang_instruction + name_instruction
     

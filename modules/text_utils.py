@@ -3,7 +3,47 @@
 Utility functions for text processing.
 """
 
-MAX_RESPONSE_LENGTH = 1024
+import tiktoken
+
+MAX_RESPONSE_LENGTH = 4096
+
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """
+    Count the number of tokens in a text string.
+    """
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    return len(encoding.encode(text))
+
+
+def truncate_by_tokens(text: str, max_tokens: int, model: str = "gpt-4o") -> str:
+    """
+    Truncate text to a maximum token count.
+    """
+    if not text:
+        return text
+        
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+        
+    tokens = encoding.encode(text)
+    
+    # If already within limit
+    if len(tokens) <= max_tokens:
+        return text
+        
+    # Truncate tokens and decode back to string
+    truncated_tokens = tokens[:max_tokens]
+    truncated_text = encoding.decode(truncated_tokens)
+    
+    return truncated_text
+
 
 
 def truncate_response(text: str, max_length: int = MAX_RESPONSE_LENGTH) -> str:

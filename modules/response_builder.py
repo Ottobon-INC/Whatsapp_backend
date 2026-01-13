@@ -1,16 +1,17 @@
-
-
-# modules/response_builder.py
 import os
-from typing import List, Optional, Dict, Tuple
+import re
+from typing import List, Dict, Optional, Tuple, Any
 
-import supabase_client  # ensures .env is loaded once
 from openai import OpenAI
+from dotenv import load_dotenv
 
-from modules.rag_search import add_kb_entry
+# Internal module imports
+from modules.detect_lang import detect_language
 from modules.text_utils import truncate_response
-# Import from root (assuming running from main.py)
 from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
+
+# Load env variables (ensure .env is loaded)
+load_dotenv()
 
 _api_key = os.getenv("OPENAI_API_KEY")
 if not _api_key:
@@ -18,64 +19,135 @@ if not _api_key:
 
 client = OpenAI(api_key=_api_key)
 
-# Classifier system prompt (must be exact)
-CLASSIFIER_PROMPT = """
-You are a Digital South Indian Nurse Chatbot.
+# =============================================================================
+# CONSTANTS & PROMPTS
+# =============================================================================
 
-Your task:
-1. Detect the language of the user's message. The input may be:
-   - Telugu
-   - English
-   - Tinglish (Telugu written in Roman alphabet)
+LANGUAGE_LOCK_PROMPT = """
+=== ABSOLUTE LANGUAGE CONSTRAINT ===
 
-2. Translate the message internally into English for analysis, but always respond in the user’s identified language.
+This is a HARD RULE and OVERRIDES all context, examples, and knowledge.
 
-3. Check if the user’s question clearly relates to any of these topics:
-   IVF, Fertility, Parenthood, Pregnancy, Ovulation, Infertility,
-   IUI, Treatment cost, Success rate, Finance, Clinics, Doctors.
+If target language is TINGLISH:
+- Use ONLY Roman alphabets (a–z).
+- NEVER output Telugu script (Unicode 0C00–0C7F).
+- Even if context contains Telugu script, DO NOT copy it.
+- Internally translate and respond ONLY in Roman letters.
+- Sentence structure should remain Telugu-like (e.g., "Meeru ela unnaru?").
+- Do NOT switch to pure English (e.g., "How are you?" is INCORRECT).
 
-4. Output MUST include ONLY:
+If target language is TELUGU:
+- Respond ONLY in Telugu Unicode.
+- Use STRICTLY colloquial spoken Telugu (Vyavaharika).
+- STRONGLY AVOID formal/bookish words (Granthika).
+- Write like a friend talking, not like a Wikipedia article.
+- Use simple verbs: e.g., 'cheppandi' instead of 'vivarinchandi'.
+- CRITICAL: REPLACE complex/formal Telugu words with English words written in Telugu script.
+    - NEVER USE: 'చలనశీలత' (Motility), 'సామర్థ్యం' (Efficiency), 'నిర్ధారణ' (Diagnosis).
+    - USE INSTEAD: 'మోటిలిటీ', 'ఎఫిషియెన్సీ', 'టెస్ట్'.
+    - Rule: If a word is hard to read or scientific, use the English version in Telugu script.
 
-Identified Language: <language>
+If target language is ENGLISH:
+- Use ONLY natural English.
 
-General Output:
-[SIGNAL]: YES or NO
+Before finalizing the answer:
+- Verify output matches the target language.
+- Rewrite if it violates this rule.
+
+f"{name_line}\n"
+        "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
+        "Maintain continuity using the conversation history.\n"
+        "For safety: suggest consulting a doctor for personalized medical advice.\n"
+
+=== END LANGUAGE CONSTRAINT ===
 """
 
+CLASSIFIER_SYS_PROMPT = """
+You are a routing assistant.
+Your job is to classify the user's message intent into specific signals.
 
-def classify_message(message: str) -> Dict[str, str]:
+Signals:
+1. "MEDICAL": User is asking about IVF, pregnancy, periods, fertility, symptoms, costs, or medical procedures.
+2. "SMALLTALK": User is greeting (Hi, Hello), asking "How are you?", or general chat.
+3. "OUT_OF_SCOPE": User is asking about unrelated topics (Cricket, Movies, Politics).
+
+Return ONLY a JSON object:
+{"signal": "MEDICAL" | "SMALLTALK" | "OUT_OF_SCOPE"}
+"""
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def contains_telugu_unicode(text: str) -> bool:
     """
-    Run the classifier prompt and parse out language and signal.
+    Check if text contains any characters in the Telugu Unicode block (0x0C00 - 0x0C7F).
     """
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": CLASSIFIER_PROMPT},
-            {"role": "user", "content": message},
-        ],
-        temperature=0.2,
+    return any(0x0C00 <= ord(c) <= 0x0C7F for c in text)
+
+def is_mostly_english(text: str) -> bool:
+    """
+    Check if text is predominantly English using common stopwords.
+    Returns True if English stopwords appear frequently.
+    """
+    english_stopwords = {"the", "is", "and", "of", "to", "in", "it", "that", "for", "with", "are", "on", "as", "at", "be", "this", "have", "from"}
+    words = text.lower().replace(".", " ").replace(",", " ").split()
+    if not words:
+        return False
+        
+    english_count = sum(1 for w in words if w in english_stopwords)
+    ratio = english_count / len(words)
+    
+    # If more than 15% of words are core English stopwords, it's likely English sentences.
+    # Tinglish might have 'is' or 'and' but rarely 'the', 'of', 'for' in valid grammatical positions.
+    return ratio > 0.15
+
+def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str:
+    """
+    Forcefully rewrite text into Tinglish (Roman script).
+    Handles both Telugu script and Pure English input.
+    """
+    print(f"DEBUG: Rewriting text: '{text[:50]}...' with user_name: '{user_name}'")
+    system_prompt = (
+        "You are a strict translation and transliteration engine.\n"
+        "Your goal is to convert the input text into 'Tinglish' (Telugu spoken in Roman English letters).\n"
+        "RULES:\n"
+        "1. If input is English -> Translate to colloquial Telugu and write in Roman script.\n"
+        "2. If input is Telugu script -> Transliterate to Roman script.\n"
+        "3. Keep the meaning exact but make it sound like a natural Telugu speaker chat.\n"
+        "4. Output ONLY the Romanized text.\n"
+        "5. Example: 'How are you?' -> 'Meeru ela unnaru?'\n"
+        "6. Example: 'నమస్కారం' -> 'Namaskaram'.\n"
+        "7. Do NOT add filler words like 'Aam', 'Mmm', 'Avunu' unless in the source.\n"
+        "8. Do NOT invent a name if none is in the input.\n"
     )
 
-    content = completion.choices[0].message.content
-    language = ""
-    signal = ""
+    if user_name and user_name.strip():
+         system_prompt += f"9. The user's name is '{user_name}'. Address them by this name. Do NOT change it.\n"
+    else:
+         system_prompt += "9. The user's name is UNKNOWN. Do NOT use any name or title (like Ma'am/Sir/Aayi). Just start the sentence.\n"
 
-    for line in content.splitlines():
-        low = line.lower()
-        if low.startswith("identified language"):
-            parts = line.split(":", 1)
-            if len(parts) == 2:
-                language = parts[1].strip()
-        elif "[signal]" in low:
-            parts = line.split(":", 1)
-            if len(parts) == 2:
-                signal = parts[1].strip().upper()
-
-    return {
-        "language": language or "en",
-        "signal": signal or "NO",
-    }
-
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            temperature=0.2,
+            max_tokens=1024
+        )
+        out_text = completion.choices[0].message.content.strip()
+        
+        # NUCLEAR OPTION: Regex remove "Aam", "Aayi"
+        # Matches "Aam," "Aam " at start, or anywhere.
+        import re
+        out_text = re.sub(r'(?i)\b(aam|aayi|avunu)\b[,.]*', '', out_text).strip()
+        
+        return out_text
+    except Exception as e:
+        print(f"Error re-writing Tinglish: {e}")
+        return text
 
 def _friendly_name(name: Optional[str]) -> Optional[str]:
     if not name:
@@ -93,99 +165,99 @@ def _friendly_name(name: Optional[str]) -> Optional[str]:
         candidate = candidate[:14]
     return candidate
 
-
 def _build_history_block(history: Optional[List[Dict[str, str]]]) -> str:
     if not history:
-        return "### Conversation History:\nNone."
-    lines = ["### Conversation History:"]
+        return ""
+    
+    block = "\n=== CONVERSATION HISTORY ===\n"
     for msg in history:
-        role = msg.get("role", "user").capitalize()
+        role = msg.get("role", "user")
         content = msg.get("content", "")
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
+        block += f"{role.upper()}: {content}\n"
+    block += "=== END HISTORY ===\n"
+    return block
 
+# =============================================================================
+# PUBLIC FUNCTIONS
+# =============================================================================
+
+def classify_message(message: str) -> Dict[str, Any]:
+    """
+    1. Deterministically detect language.
+    2. Use LLM to detect signal (intent).
+    Returns: {"language": str, "signal": str}
+    """
+    # 1. Single source of truth for language
+    detected_lang = detect_language(message)
+    
+    # 2. Detect Signal via LLM
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": CLASSIFIER_SYS_PROMPT},
+                {"role": "user", "content": message},
+            ],
+            temperature=0.0, # Deterministic classification
+            response_format={"type": "json_object"}
+        )
+        import json
+        data = json.loads(completion.choices[0].message.content)
+        signal = data.get("signal", "SMALLTALK")
+    except Exception as e:
+        print(f"Classification error: {e}")
+        signal = "SMALLTALK" # Fail safe
+
+    return {
+        "language": detected_lang,
+        "signal": signal
+    }
 
 def generate_smalltalk_response(
     prompt: str,
     target_lang: str,
     history: Optional[List[Dict[str, str]]],
     user_name: Optional[str] = None,
-    store_to_kb: bool = False,
 ) -> str:
-    user_name = _friendly_name(user_name)
+    
     history_block = _build_history_block(history)
-    has_history = bool(history)
-    name_line = f"User name: {user_name}" if user_name else "User name: Not provided"
-    greeting_rule = (
-        "If this is the first turn, start with a warm greeting and the name (e.g., 'Hi <name>,'). "
-        "If this is a follow-up, do NOT say 'Hi' again; instead give a brief caring acknowledgement with the name (e.g., '<name>, I'm here for you.'). "
-        "If no usable name, use a gentle greeting without a name."
-    )
-    # Language Instruction Construction
-    lang_lower = target_lang.lower()
-    if lang_lower in ["telugu", "te"]:
-        language_instruction = (
-            "Respond in **Colloquial Spoken Telugu** (Vyavaharika Bhasha) using **Telugu Script**.\n"
-            "Use natural, conversational Telugu as spoken in daily life, NOT formal bookish Telugu (Granthika Bhasha).\n"
-            "CRITICAL: Do NOT use complex formal Telugu words like 'శస్త్రచికిత్స', 'గర్భధారణ', 'అండాలు', 'శుక్రాణువు', 'సంతులనానికి', 'పౌష్టికాహారం', 'కృత్రిమ', 'కంట్రాక్షన్స్', 'చొప్పిస్తుంది', 'చొప్పించు', 'అడ్డుకట్ట', 'ఉత్పత్తి'.\n"
-            "NEVER use the word 'అడ్డుకట్ట' (Obstacles) or 'ఉత్పత్తి' (Production).\n"
-            "INSTEAD, use English words written in Telugu script: \n"
-            "   - 'Surgery' -> 'సర్జరీ'\n"
-            "   - 'Pregnancy' -> 'ప్రెగ్నెన్సీ'\n"
-            "   - 'Eggs' -> 'ఎగ్స్'\n"
-            "   - 'Sperm' -> 'స్పెర్మ్'\n"
-            "   - 'Balance' -> 'బ్యాలెన్స్'\n"
-            "   - 'Diet' -> 'డైట్'\n"
-            "   - 'Artificial' -> 'ఆర్టిఫిషియల్' (or simple Telugu like 'సహజంగా')\n"
-            "   - 'Contractions' -> 'ప్రాబ్లమ్స్' (Problems) or 'నొప్పి' (Pain)\n"
-            "   - 'Obstacles' -> 'ప్రాబ్లమ్స్' (Problems) or 'ఇబ్బందులు'\n"
-            "   - 'Production' -> 'తయారు' (Make) or 'రిలీజ్' (Release)\n"
-            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
-            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
-            "Use English words for ALL medical/technical terms (e.g., Doctor, Scan, Pain, Treatment, Problem, Period, Embryo, Fertile, Balance, Diet, Artificial) written in **Telugu script**.\n"
-            "Ensure ALL spelling is grammatically correct in Telugu script.\n"
-            "Example: 'మీరు టెన్షన్ పడకండి, ఇది కామన్ ప్రాబ్లమ్. డాక్టరు గారిని కలవండి.'\n"
-        )
-    elif lang_lower == "tinglish":
-        language_instruction = (
-            "Respond in **Tinglish** (Telugu words using Roman letters).\n"
-            "Do not switch to pure English.\n"
-            "Example: 'Meeru ela unnaru?'\n"
-        )
-    else:
-        language_instruction = f"Match the language of the user prompt: respond ONLY in {target_lang}.\n"
-
+    
     system_content = (
-        "You are Sakhi, an emotional south indian companion.\n"
-        "User is NOT asking medical questions.\n"
-        "Give a warm, supportive, friendly, empathetic reply.\n"
-        "Avoid medical or fertility information completely.\n"
-        f"{greeting_rule}\n"
-        f"{language_instruction}"
-        "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
-        "Keep the tone conversational like two people chatting; avoid headings or bullet labels. Use full stops/commas naturally.\n"
-        f"{name_line}\n"
-        "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
-        "Maintain continuity using the conversation history.\n"
+        f"{LANGUAGE_LOCK_PROMPT}\n"
+        f"TARGET LANGUAGE: {target_lang.upper()}\n\n"
+        "You are Sakhi, a warm, emotional South Indian companion.\n"
+        "The user is engaging in casual chat (Smalltalk).\n"
+        "Be friendly, empathetic, and polite. Do NOT give medical advice here.\n"
+        "Keep responses concise and natural.\n"
+        f"USER NAME: {user_name}\n"
+        "INSTRUCTION: Address the user by name if provided. NEVER use 'Aayi'.\n"
         f"{history_block}"
     )
 
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.4,
-    )
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
+        response_text = completion.choices[0].message.content.strip()
+        
+        # Truncate
+        response_text = truncate_response(response_text)
 
-    final_text = completion.choices[0].message.content
-    
-    # Truncate response to maximum 1024 characters
-    final_text = truncate_response(final_text)
+        # HARD ENFORCEMENT: Tinglish check
+        if target_lang.lower() == "tinglish":
+            if contains_telugu_unicode(response_text) or is_mostly_english(response_text):
+                 response_text = force_rewrite_to_tinglish(response_text, user_name=user_name)
+            
+        return response_text
 
-    return final_text
-
+    except Exception as e:
+        print(f"Smalltalk gen error: {e}")
+        return "I am sorry, I am having trouble thinking right now."
 
 def generate_medical_response(
     prompt: str,
@@ -193,105 +265,38 @@ def generate_medical_response(
     history: Optional[List[Dict[str, str]]],
     user_name: Optional[str] = None,
 ) -> Tuple[str, List[dict]]:
-    """
-    Medical path: RAG + history.
-    Returns (final_text, kb_results)
-    """
-    # Use Hierarchical RAG
+    
+    # 1. RAG Retrieval
     kb_results = hierarchical_rag_query(prompt)
     context_text = format_hierarchical_context(kb_results)
-    
-    history_block = _build_history_block(history)
 
     user_name = _friendly_name(user_name)
     name_line = f"User name: {user_name}" if user_name else "User name: Not provided"
     has_history = bool(history)
-    greeting_rule = (
-        "If this is the first turn, start with a warm greeting and the name (e.g., 'Hi <name>,'). "
-        "If this is a follow-up, do NOT say 'Hi' again; instead give a brief caring acknowledgement with the name (e.g., '<name>, I understand.'). "
-        "If no usable name, use a gentle greeting without a name."
-    )
-        
-    # Language Instruction Construction
-    lang_lower = target_lang.lower()
-    if lang_lower in ["telugu", "te"]:
-        language_instruction = (
-            "Respond in **Colloquial Spoken Telugu** (Vyavaharika Bhasha) using **Telugu Script**.\n"
-            "Use natural, conversational Telugu as spoken in daily life, NOT formal bookish Telugu (Granthika Bhasha).\n"
-            "CRITICAL: Do NOT use complex formal Telugu words like 'శస్త్రచికిత్స', 'గర్భధారణ', 'అండాలు', 'శుక్రాణువు', 'సంతులనానికి', 'పౌష్టికాహారం', 'కృత్రిమ', 'కంట్రాక్షన్స్', 'చొప్పిస్తుంది', 'చొప్పించు', 'అడ్డుకట్ట', 'ఉత్పత్తి'.\n"
-            "NEVER use the word 'అడ్డుకట్ట' (Obstacles) or 'ఉత్పత్తి' (Production).\n"
-            "INSTEAD, use English words written in Telugu script: \n"
-            "   - 'Surgery' -> 'సర్జరీ'\n"
-            "   - 'Pregnancy' -> 'ప్రెగ్నెన్సీ'\n"
-            "   - 'Eggs' -> 'ఎగ్స్'\n"
-            "   - 'Sperm' -> 'స్పెర్మ్'\n"
-            "   - 'Balance' -> 'బ్యాలెన్స్'\n"
-            "   - 'Diet' -> 'డైట్'\n"
-            "   - 'Artificial' -> 'ఆర్టిఫిషియల్' (or simple Telugu like 'సహజంగా')\n"
-            "   - 'Contractions' -> 'ప్రాబ్లమ్స్' (Problems) or 'నొప్పి' (Pain)\n"
-            "   - 'Obstacles' -> 'ప్రాబ్లమ్స్' (Problems) or 'ఇబ్బందులు'\n"
-            "   - 'Production' -> 'తయారు' (Make) or 'రిలీజ్' (Release)\n"
-            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
-            "For 'insert', use colloquial verbs like 'పంపిస్తారు' or 'పెడతారు'.\n"
-            "Use English words for ALL medical/technical terms (e.g., Doctor, Scan, Pain, Treatment, Problem, Period, Embryo, Fertile, Balance, Diet, Artificial) written in **Telugu script**.\n"
-            "Ensure ALL spelling is grammatically correct in Telugu script.\n"
-            "Example: 'మీరు టెన్షన్ పడకండి, ఇది కామన్ ప్రాబ్లమ్. డాక్టరు గారిని కలవండి.'\n"
-        )
-    elif lang_lower == "tinglish":
-        language_instruction = (
-            "Respond in **Tinglish** (Telugu words using Roman letters).\n"
-            "Do not switch to pure English.\n"
-            "Example: 'Meeru ela unnaru?'\n"
-        )
-    else:
-        language_instruction = f"Match the language of the user prompt: respond ONLY in {target_lang}.\n"
+    history_block = _build_history_block(history)
 
+    # 2. Construct System Prompt
     system_content = (
-        "You are Sakhi, a warm emotional south indian companion but medically safe.\n"
+        f"{LANGUAGE_LOCK_PROMPT}\n"
+        f"TARGET LANGUAGE: {target_lang.upper()}\n\n"
+        "You are Sakhi, a medical support chatbot for IVF and fertility.\n"
+        "Use the retrieved context below to answer accurate medical questions.\n"
         "\n"
-        "=== KNOWLEDGE SOURCE PRIORITY ===\n"
-        "1. FIRST: Use RETRIEVED CONTEXT (provided below) as your primary source of truth\n"
-        "   - If the context contains relevant information, USE IT for accurate answers\n"
-        "   - Quote specific facts, figures, costs, and details from the context\n"
+        "=== RETRIEVED CONTEXT ===\n"
+        "Disclaimer: Context may be in Telugu or English. Use it for meaning, NOT for direct copying.\n"
+        f"{context_text}\n"
+        "=== END CONTEXT ===\n"
         "\n"
-        "2. SECOND: If context does NOT cover the question, use your GENERAL KNOWLEDGE\n"
-        "   - Provide helpful, medically safe information from your training\n"
-        "   - Be informative - don't refuse to answer or say 'I don't have that info'\n"
-        "   - You may indicate when giving general guidance (e.g., 'Generally...')\n"
-        "\n"
-        "3. ALWAYS BE HELPFUL: Users should always get a useful, caring response\n"
-        "\n"
-        f"{greeting_rule}\n"
-        f"{language_instruction}"
-        "Keep sentences short, clear, and grammatically simple. For Tinglish, use natural, easy-to-read Roman Telugu (no awkward transliterations).\n"
-        "\n"
-        "MANDATORY RESPONSE STRUCTURE:\n"
-        "1. Write your main conversational reply with caring tone. If a usable name is available, open with it naturally.\n"
-        "2. After the main reply, add EXACTLY two newline characters.\n"
-        "3. Write ' Follow ups : ' (space before 'Follow', space after 'ups', space after colon).\n"
-        "4. Immediately after the colon and space (NO extra newlines), write the first question.\n"
-        "5. Each subsequent question goes on a new line.\n"
-        "\n"
-        "FOLLOW-UP QUESTION RULES:\n"
-        "- Generate 3 DYNAMIC follow-up questions that are DIRECTLY RELEVANT to your main reply.\n"
-        "- Questions must help the user explore the topic deeper or clarify related concerns.\n"
-        "- DO NOT use generic or static questions like 'What is your first question?'.\n"
-        "- **CRITICAL**: Check the conversation history above. DO NOT repeat any question that has already been asked or suggested.\n"
-        "- If the user just asked about Cost, do NOT ask about Cost again. Ask about Success Rate or Procedure instead.\n"
-        "- Each question should be specific to the medical/fertility topic discussed.\n"
-        "\n"
-        "EXAMPLE FORMAT (questions are just examples, yours must be contextual):\n"
-        "[Your main reply about IVF costs here.]\n"
-        "\n"
-        " Follow ups : What financing options are available for IVF?\n"
-        "Does insurance cover any part of the treatment?\n"
-        "How many cycles might I need?\n"
-        "\n"
-        "CRITICAL: Do NOT add blank lines after ' Follow ups : ' - the first question must appear immediately.\n"
-        "IMPORTANT: Each follow-up question MUST be under 65 characters long.\n"
-        "IMPORTANT: Questions must be CONTEXTUAL to your reply, NOT static placeholders.\n"
-        "IMPORTANT: Questions must be CONTEXTUAL to your reply, NOT static placeholders.\n"
-        f"Always answer in {target_lang}. If Telugu, use colloquial (Vyavaharika) style for questions too.\n"
+        "RESPONSE RULES:\n"
+        "1. Prioritize context facts. If answer is not in context, use general safe medical knowledge.\n"
+        "2. Add a standard disclaimer about consulting a doctor for specific advice.\n"
+        "3. FORMATTING (Strict):\n"
+        "   - Main helpful response (Paragraphs or bullet points).\n"
+        "   - Add '\\n\\n' (Double Newline).\n"
+        "   - Write ' Follow ups : ' (Note the leading space).\n"
+        "   - Add '\\n' (Single Newline).\n"
+        "   - 3 context-aware follow-up questions from the next line.\n"
+        "   - CRITICAL: Do NOT use '**Follow-up**' or 'Follow Up:' or ANY other variation. Use EXACTLY ' Follow ups : '.\n"
         f"{name_line}\n"
         "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
         "Maintain continuity using the conversation history.\n"
@@ -299,30 +304,28 @@ def generate_medical_response(
         f"{history_block}"
     )
 
-    if context_text:
-        system_content += f"\n\n{context_text}"
-        system_content += (
-            "\nUse the above knowledge directly. If something is unclear, stay conservative and safe."
+    # 3. LLM Generation
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4, 
         )
-    else:
-        system_content += (
-            "\n\n### Retrieved Knowledge:\nNone."
-            "\nNo KB retrieved. Provide general, high-level, medically safe guidance."
-            "\nState clearly that advice is general and suggest consulting a doctor for specifics."
-        )
+        response_text = completion.choices[0].message.content.strip()
+        
+        # Truncate
+        response_text = truncate_response(response_text)
+        
+        # HARD ENFORCEMENT: Tinglish check
+        if target_lang.lower() == "tinglish":
+            if contains_telugu_unicode(response_text) or is_mostly_english(response_text):
+                 response_text = force_rewrite_to_tinglish(response_text, user_name=user_name)
+            
+        return response_text, kb_results
 
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.4,
-    )
-
-    final_text = completion.choices[0].message.content
-    
-    # Truncate response to maximum 1024 characters
-    final_text = truncate_response(final_text)
-
-    return final_text, kb_results
+    except Exception as e:
+        print(f"Medical gen error: {e}")
+        return "I encountered an error processing your medical query.", []
