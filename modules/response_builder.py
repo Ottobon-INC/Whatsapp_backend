@@ -22,7 +22,6 @@ client = OpenAI(api_key=_api_key)
 # =============================================================================
 # CONSTANTS & PROMPTS
 # =============================================================================
-
 LANGUAGE_LOCK_PROMPT = """
 === ABSOLUTE LANGUAGE CONSTRAINT ===
 
@@ -34,18 +33,13 @@ If target language is TINGLISH:
 - Even if context contains Telugu script, DO NOT copy it.
 - Internally translate and respond ONLY in Roman letters.
 - Sentence structure should remain Telugu-like (e.g., "Meeru ela unnaru?").
-- Do NOT switch to pure English (e.g., "How are you?" is INCORRECT).
+- Do NOT switch to pure English.
 
 If target language is TELUGU:
 - Respond ONLY in Telugu Unicode.
-- Use STRICTLY colloquial spoken Telugu (Vyavaharika).
-- STRONGLY AVOID formal/bookish words (Granthika).
-- Write like a friend talking, not like a Wikipedia article.
-- Use simple verbs: e.g., 'cheppandi' instead of 'vivarinchandi'.
-- CRITICAL: REPLACE complex/formal Telugu words with English words written in Telugu script.
-    - NEVER USE: 'చలనశీలత' (Motility), 'సామర్థ్యం' (Efficiency), 'నిర్ధారణ' (Diagnosis).
-    - USE INSTEAD: 'మోటిలిటీ', 'ఎఫిషియెన్సీ', 'టెస్ట్'.
-    - Rule: If a word is hard to read or scientific, use the English version in Telugu script.
+- Use STRICTLY colloquial spoken Telugu.
+- Avoid formal/bookish Telugu.
+- Replace complex Telugu words with English words in Telugu script.
 
 If target language is ENGLISH:
 - Use ONLY natural English.
@@ -53,11 +47,6 @@ If target language is ENGLISH:
 Before finalizing the answer:
 - Verify output matches the target language.
 - Rewrite if it violates this rule.
-
-f"{name_line}\n"
-        "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
-        "Maintain continuity using the conversation history.\n"
-        "For safety: suggest consulting a doctor for personalized medical advice.\n"
 
 === END LANGUAGE CONSTRAINT ===
 """
@@ -221,16 +210,24 @@ def generate_smalltalk_response(
 ) -> str:
     
     history_block = _build_history_block(history)
+    safe_name = _friendly_name(user_name)
+    name_block = (
+    f"USER NAME: {safe_name}\nAddress the user by this name.\n"
+    if safe_name
+    else
+    "USER NAME: NONE\n"
+    "CRITICAL: Do NOT use any name, title, or filler word.\n"
+    "DO NOT start the response with 'Aam', 'Aayi', 'Avunu', or any interjection.\n"
+)
     
     system_content = (
         f"{LANGUAGE_LOCK_PROMPT}\n"
         f"TARGET LANGUAGE: {target_lang.upper()}\n\n"
         "You are Sakhi, a warm, emotional South Indian companion.\n"
-        "The user is engaging in casual chat (Smalltalk).\n"
-        "Be friendly, empathetic, and polite. Do NOT give medical advice here.\n"
+        "The user is engaging in casual chat.\n"
+        "Be friendly but direct.\n"
         "Keep responses concise and natural.\n"
-        f"USER NAME: {user_name}\n"
-        "INSTRUCTION: Address the user by name if provided. NEVER use 'Aayi'.\n"
+        f"{name_block}"
         f"{history_block}"
     )
 
@@ -269,12 +266,18 @@ def generate_medical_response(
     # 1. RAG Retrieval
     kb_results = hierarchical_rag_query(prompt)
     context_text = format_hierarchical_context(kb_results)
-
-    user_name = _friendly_name(user_name)
-    name_line = f"User name: {user_name}" if user_name else "User name: Not provided"
     has_history = bool(history)
     history_block = _build_history_block(history)
+    safe_name = _friendly_name(user_name)
 
+    name_block = (
+        f"USER NAME: {safe_name}\nAddress the user by this name.\n"
+        if safe_name
+        else
+        "USER NAME: NONE\n"
+        "CRITICAL: Do NOT use any name, title, or filler word.\n"
+        "DO NOT start with 'Aam', 'Aayi', 'Avunu', or any interjection.\n"
+    )
     # 2. Construct System Prompt
     system_content = (
         f"{LANGUAGE_LOCK_PROMPT}\n"
@@ -297,7 +300,7 @@ def generate_medical_response(
         "   - Add '\\n' (Single Newline).\n"
         "   - 3 context-aware follow-up questions from the next line.\n"
         "   - CRITICAL: Do NOT use '**Follow-up**' or 'Follow Up:' or ANY other variation. Use EXACTLY ' Follow ups : '.\n"
-        f"{name_line}\n"
+        f"{name_block}\n"
         "Address the user by name when available; if the name is long, use a shorter friendly form.\n"
         "Maintain continuity using the conversation history.\n"
         "For safety: suggest consulting a doctor for personalized medical advice.\n"
