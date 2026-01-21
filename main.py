@@ -282,7 +282,13 @@ async def sakhi_chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Failed to save user message: {e}")
 
     # STEP 0: Decide routing using Model Gateway
-    route = model_gateway.decide_route(req.message)
+    # NOTE: Router works best with English. Translate first for routing check?
+    from modules.translation_service import translate_query 
+    # Translate for internal logic only (routing + search)
+    english_intent_query = translate_query(req.message, target_lang="en")
+    
+    # Pass English query to router for better accuracy on non-English inputs
+    route = model_gateway.decide_route(english_intent_query)
 
     # Step 1: classify message
     try:
@@ -356,9 +362,10 @@ async def sakhi_chat(req: ChatRequest):
     
     # ===== ROUTE 2: SLM_RAG (Simple medical, RAG + SLM) =====
     elif route == Route.SLM_RAG:
-        # Perform RAG search
+        # Perform RAG search using TRANSLATED QUERY for better recall
         try:
-            kb_results = hierarchical_rag_query(req.message)
+            # We pass the translated english query to the search function
+            kb_results = hierarchical_rag_query(req.message, translated_query=english_intent_query)
             context_text = format_hierarchical_context(kb_results)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to perform RAG search: {e}")
@@ -367,7 +374,7 @@ async def sakhi_chat(req: ChatRequest):
         try:
             final_ans = await slm_client.generate_rag_response(
                 context=context_text,
-                message=req.message,
+                message=req.message, # Keep original message for personality/tone matching
                 language=target_lang,
                 user_name=user_name,
             )

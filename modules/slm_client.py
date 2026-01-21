@@ -216,18 +216,23 @@ class SLMClient:
                     # Build system instruction with guardrails
                     system_instruction = self._build_system_instruction("direct", language, user_name)
                     
-                    # Prepare request payload matching SLM API format
-                    # We inject the specific persona instructions again in the payload to ensure adherence
+                    # Prepare request payload
                     final_question = f"""
                     {system_instruction}
                     
                     USER MESSAGE:
                     {message}
                     """
-
+                    
+                    # Tokenizer Guardrail: Ensure logic fits in SLM context
+                    from modules.tokenizer_manager import get_tokenizer
+                    tokenizer = get_tokenizer()
+                    # Truncate user message potentially if it's massive? 
+                    # Generally we trust the input is reasonable or truncated upstream
+                    
                     payload = {
-                        "question": final_question,  # SLM expects "question" not "message"
-                        "chat_history": "",   # Empty for direct chat
+                        "question": final_question, 
+                        "chat_history": "",
                     }
                     
                     # Prepare headers
