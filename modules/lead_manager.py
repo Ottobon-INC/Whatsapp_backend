@@ -152,6 +152,7 @@ def _save_lead_to_db(data: Dict[str, str], added_by_user_id: str):
         "gender": data.get("gender"),
         "problem": data.get("problem"),
         "status": "New Inquiry",
+        "source": "Whatsapp-Sakhi",
         # "assigned_to_user_id": added_by_user_id, # Removed to avoid FK violation if user is not in sakhi_clinic_users
     }
     return supabase_insert("sakhi_clinic_leads", payload)
