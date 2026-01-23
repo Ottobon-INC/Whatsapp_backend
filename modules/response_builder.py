@@ -217,7 +217,7 @@ def generate_smalltalk_response(
     else
     "USER NAME: NONE\n"
     "CRITICAL: Do NOT use any name, title, or filler word.\n"
-    "DO NOT start the response with 'Aam', 'Aayi', 'Avunu', or any interjection.\n"
+    "DO NOT start the response with 'Aayi', 'Avunu', or any interjection.\n"
 )
     
     system_content = (
@@ -276,7 +276,7 @@ def generate_medical_response(
         else
         "USER NAME: NONE\n"
         "CRITICAL: Do NOT use any name, title, or filler word.\n"
-        "DO NOT start with 'Aam', 'Aayi', 'Avunu', or any interjection.\n"
+        "DO NOT start with 'Aayi', 'Avunu', or any interjection.\n"
     )
     # 2. Construct System Prompt
     system_content = (
