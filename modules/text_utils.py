@@ -5,7 +5,7 @@ Utility functions for text processing.
 
 import tiktoken
 
-MAX_RESPONSE_LENGTH = 4096
+MAX_RESPONSE_LENGTH = 1024  # WhatsApp-friendly character limit
 
 
 def count_tokens(text: str, model: str = "gpt-4o") -> int:

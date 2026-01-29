@@ -52,16 +52,22 @@ Before finalizing the answer:
 """
 
 CLASSIFIER_SYS_PROMPT = """
-You are a routing assistant.
-Your job is to classify the user's message intent into specific signals.
+You are a routing and language detection assistant.
+Your job is to classify the user's message intent and detect the language.
 
-Signals:
+1. Language:
+- "English": Standard English.
+- "Telugu": Telugu Script (e.g., మీరు ఎలా ఉన్నారు?).
+- "Tinglish": Telugu spoken in English/Roman script (e.g., Meeru ela unnaru?, ivf ante enti?).
+- "Hindi": Hindi.
+
+2. Signals:
 1. "MEDICAL": User is asking about IVF, pregnancy, periods, fertility, symptoms, costs, or medical procedures.
 2. "SMALLTALK": User is greeting (Hi, Hello), asking "How are you?", or general chat.
 3. "OUT_OF_SCOPE": User is asking about unrelated topics (Cricket, Movies, Politics).
 
 Return ONLY a JSON object:
-{"signal": "MEDICAL" | "SMALLTALK" | "OUT_OF_SCOPE"}
+{"signal": "MEDICAL" | "SMALLTALK" | "OUT_OF_SCOPE", "language": "English" | "Telugu" | "Tinglish" | "Hindi"}
 """
 
 # =============================================================================
@@ -94,49 +100,231 @@ def is_mostly_english(text: str) -> bool:
 def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str:
     """
     Forcefully rewrite text into Tinglish (Roman script).
-    Handles both Telugu script and Pure English input.
+    Splits content into Main Body and Follow-ups to process them separately.
+    Enforces 'Warmth & Hope' in the main body and 'Concise Questions' in follow-ups.
     """
-    print(f"DEBUG: Rewriting text: '{text[:50]}...' with user_name: '{user_name}'")
-    system_prompt = (
-        "You are a strict translation and transliteration engine.\n"
-        "Your goal is to convert the input text into 'Tinglish' (Telugu spoken in Roman English letters).\n"
-        "RULES:\n"
-        "1. If input is English -> Translate to colloquial Telugu and write in Roman script.\n"
-        "2. If input is Telugu script -> Transliterate to Roman script.\n"
-        "3. Keep the meaning exact but make it sound like a natural Telugu speaker chat.\n"
-        "4. Output ONLY the Romanized text.\n"
-        "5. Example: 'How are you?' -> 'Meeru ela unnaru?'\n"
-        "6. Example: 'నమస్కారం' -> 'Namaskaram'.\n"
-        "7. Do NOT add filler words like 'Aam', 'Mmm', 'Avunu' unless in the source.\n"
-        "8. Do NOT invent a name if none is in the input.\n"
+    import re
+    
+    # 1. SPLIT: Isolate Main Response and Follow-ups
+    # Look for "Follow ups :" or variations case-insensitive
+    split_match = re.search(r'(?i)\n\s*follow\s*-?\s*ups\s*:', text)
+    
+    main_body = text
+    follow_ups_text = ""
+    
+    if split_match:
+        split_idx = split_match.start()
+        main_body = text[:split_idx].strip()
+        follow_ups_text = text[split_idx:].strip() # Keep the header for now to identify it
+        
+        # Remove the header from follow_ups_text for processing
+        # We will add standard header back later
+        follow_ups_content = re.sub(r'(?i)^follow\s*-?\s*ups\s*:\s*', '', follow_ups_text).strip()
+    else:
+        follow_ups_content = ""
+
+    # 2. PROCESS MAIN BODY (Warmth, Hope, Tinglish)
+    system_prompt_body = (
+        "You are 'Sakhi', a warm, empathetic, and hopeful fertility companion.\n"
+        "Your task: Rewrite the input English text into **Natural Conversational Tinglish**.\n"
+        "\n"
+        "=== EMOTIONAL TONE: WARM & FACTUAL ===\n"
+        "1. **Balance:** Be warm (like an 'Akka') but **DO NOT** remove medical facts, risks, or causes.\n"
+        "2. **Clarity:** If the input mentions specific conditions (e.g., 'Chromosomal abnormalities', 'Ovarian reserve'), YOU MUST INCLUDE THEM in the translation.\n"
+        "3. **Empathy:** Use 'Don't worry' only *after* explaining the facts. Do not replace facts with hope.\n"
+        "\n"
+        "=== LANGUAGE RULES ===\n"
+        "1. **Analysis:** Understand the meaning first. Don't translate word-for-word.\n"
+        "2. **Sentence Structure:** Use Telugu grammar. NEVER start clauses with 'which makes' or 'due to'. Use 'Anduvalla' or ends with 'avtundi'.\n"
+        "   - BAD: '...which makes conceive cheyadam hard.'\n"
+        "   - GOOD: '...dani valla conceive avvadam konchem tough avtundi.'\n"
+        "3. **Keep Medical Terms English:** IVF, Pregnancy, Sperm, Egg, Embryo, Doctor, Period, Success rate.\n"
+        "3. **Grammar:** Use natural Telugu verb endings (untundi, avtundi, cheyali).\n"
+        "4. **Vocabulary Mappings:**\n"
+        "   - 'This' -> 'Ee' (e.g., 'Ee process')\n"
+        "   - 'That' -> 'Adi'\n"
+        "   - 'These' -> 'Ivi'\n"
+        "   - 'Women' -> 'Women' or 'Aadavallalo' (NEVER use 'Ammaloki')\n"
+        "   - 'Men' -> 'Magavallu' (NEVER use 'Manishi' for gender)\n"
+        "   - 'Couples' -> 'Dampatulu' or 'Couples'\n"
+        "   - 'Not only that' -> 'Anthe kadu' (NEVER use 'Aamathram')\n"
+        "5. **Structure:** Use Bullet points (* ) for lists. Try to format as '**Topic**: Description' where possible.\n"
+        "   - **CRITICAL:** Always keep the Introduction paragraph. Do not jump straight to bullets.\n"
+        "6. **Corrections:**\n"
+        "   - 'Outside body' -> 'Lab lo' (Better than 'External ga' or 'Body bayata')\n"
+        "   - 'Assisted reproductive technology' -> 'Fertility treatment'\n"
+        "\n"
+        "=== EXAMPLES ===\n"
+        "Input: 'IVF involves injections and is painful.'\n"
+        "Output: 'IVF lo konni injections untayi, konchem discomfort undochu kani idi barinchagalige noppe. Doctor guidance to antha smooth ga avtundi.'\n"
+        "\n"
+        "Input: 'Success rates depend on age.'\n"
+        "Output: 'Success rate anedi mee age meeda depend ayi untundi, kani correct treatment to manchi results vasthayi.'\n"
     )
 
     if user_name and user_name.strip():
-         system_prompt += f"9. The user's name is '{user_name}'. Address them by this name. Do NOT change it.\n"
+         system_prompt_body += f"9. The user's name is '{user_name}'. Address them by this name. Do NOT change it.\n"
     else:
-         system_prompt += "9. The user's name is UNKNOWN. Do NOT use any name or title (like Ma'am/Sir/Aayi). Just start the sentence.\n"
+         system_prompt_body += "9. The user's name is UNKNOWN. Do NOT use any name or title (like Ma'am/Sir/Aayi). Just start the sentence.\n"
 
     try:
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text},
+                {"role": "system", "content": system_prompt_body},
+                {"role": "user", "content": main_body},
             ],
             temperature=0.2,
             max_tokens=1024
         )
-        out_text = completion.choices[0].message.content.strip()
+        rewritten_body = completion.choices[0].message.content.strip()
         
-        # NUCLEAR OPTION: Regex remove "Aam", "Aayi"
-        # Matches "Aam," "Aam " at start, or anywhere.
-        import re
-        out_text = re.sub(r'(?i)\b(aam|aayi|avunu)\b[,.]*', '', out_text).strip()
+        # Regex cleanup for common hallucinations
+        rewritten_body = re.sub(r'(?i)\b(aam|aayi|avunu)\b[,.]*', '', rewritten_body).strip()
         
-        return out_text
     except Exception as e:
-        print(f"Error re-writing Tinglish: {e}")
-        return text
+        print(f"Error re-writing body: {e}")
+        rewritten_body = main_body
+
+
+    # 3. PROCESS FOLLOW-UPS (If exist)
+    rewritten_followups = ""
+    if follow_ups_content:
+        system_prompt_fu = (
+            "You are an expert conversation designer.\n"
+            "Task: Rewrite the user's specific questions into short, natural **Tinglish** questions.\n"
+            "Rules:\n"
+            "1. **Translate the Meaning:** Don't just pick random questions. Translate the *actual* English questions provided.\n"
+            "2. **Style:** Short, punchy, spoken Telugu style (2-5 words).\n"
+            "3. **Vocabulary Rules:**\n"
+            "   - Use 'entha?' for cost/time (e.g., 'Cost entha?', 'Time entha?').\n"
+            "   - Use 'enti?' for what/process (e.g., 'Process enti?', 'Problem enti?').\n"
+            "   - Use 'untunda/untaya?' for yes/no (e.g., 'Side effects untaya?', 'Risk untunda?').\n"
+            "   - Use English for nouns: Cost, Risk, Success Rate, Test, Doctor.\n"
+            "   - **SIMPLIFY:** Convert complex terms like 'Chromosomal abnormalities' -> 'Risks' or 'Health issues'.\n"
+            "   - **Assessment Questions:**\n"
+            "     - 'What is your age?' -> 'Mee age entha?'\n"
+            "     - 'How long are you trying?' -> 'Enni years nundi try chestunnaru?'\n"
+            "     - 'Any health issues?' -> 'Health issues emaina unnaya?'\n"
+            "4. **Prohibited:** Do not use complex words like 'prabhavitam', 'shukranu'. Keep it casual.\n"
+            "5. **Grammar Check:** Ensure questions are complete sentences. (BAD: 'Cut down alcohol effects untaya?' -> GOOD: 'Alcohol tagginchadam valla effects untaya?')\n"
+            "\n"
+            "=== EXAMPLES ===\n"
+            "Input: '1. What diets help? 2. Alternatives? 3. Success rate?'\n"
+            "Output:\n"
+            "1. Diet emaina follow avvala?\n"
+            "2. Vere alternatives emaina unnaya?\n"
+            "3. Success rate ela untundi?\n"
+        )
+        
+        try:
+            completion_fu = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt_fu},
+                    {"role": "user", "content": follow_ups_content},
+                ],
+                temperature=0.3,
+                max_tokens=200
+            )
+            raw_fu = completion_fu.choices[0].message.content.strip()
+            
+            # Formatter ensure clean list
+            rewritten_followups = f"\n\n Follow ups :\n{raw_fu}"
+            
+        except Exception as e:
+            print(f"Error re-writing follow-ups: {e}")
+            rewritten_followups = f"\n\n Follow ups :\n{follow_ups_content}"
+
+    # 4. COMBINE
+    return rewritten_body + rewritten_followups
+
+def force_rewrite_to_telugu(text: str, user_name: Optional[str] = None) -> str:
+    """
+    Forcefully rewrite text into Colloquial Telugu (Telugu Script).
+    Splits content into Main Body and Follow-ups to process them separately.
+    Use English for complex medical terms but transliterate when possible.
+    """
+    import re
+    
+    # 1. SPLIT
+    split_match = re.search(r'(?i)\n\s*follow\s*-?\s*ups\s*:', text)
+    
+    main_body = text
+    follow_ups_text = ""
+    
+    if split_match:
+        split_idx = split_match.start()
+        main_body = text[:split_idx].strip()
+        follow_ups_text = text[split_idx:].strip()
+        follow_ups_content = re.sub(r'(?i)^follow\s*-?\s*ups\s*:\s*', '', follow_ups_text).strip()
+    else:
+        follow_ups_content = ""
+
+    # 2. PROCESS MAIN BODY
+    system_prompt_body = (
+        "You are 'Sakhi', a warm, empathetic fertility companion.\n"
+        "Task: Translate the input English text into **Colloquial Spoken Telugu** (Telugu Script).\n"
+        "\n"
+        "=== RULES ===\n"
+        "1. **Script:** Use ONLY Telugu Unicode characters (ఆ, ఇ, క, గ...).\n"
+        "2. **Tone:** Warm but Factual. Do NOT remove medical facts/risks. Explain them simply.\n"
+        "3. **Medical Terms:** You may keep common acronyms like 'IVF', 'ICSI' in English if strictly needed, or transliterate them (ఐవిఎఫ్).\n"
+        "4. **Style:** Simple spoken Telugu, not bookish.\n"
+        "5. **Structure:** Use Bullet points (* ). Try for '**Topic**: Description' format.\n"
+        "   - **CRITICAL:** Preserve the Introduction sentence.\n"
+        "6. **Vocabulary:** Use 'Lab lo' instead of 'Body bayata'. Use 'Magavallu' for Men (Not 'Manishi').\n"
+    )
+
+    if user_name and user_name.strip():
+         system_prompt_body += f"5. Greeting: Start with 'హాయ్ {user_name},'. Do NOT translate the name (keep it if simple, or transliterate).\n"
+
+    try:
+        completion_body = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt_body},
+                {"role": "user", "content": main_body},
+            ],
+            temperature=0.4,
+            max_tokens=800
+        )
+        rewritten_body = completion_body.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error re-writing Telugu body: {e}")
+        rewritten_body = main_body
+
+    # 3. PROCESS FOLLOW-UPS
+    rewritten_followups = ""
+    if follow_ups_content:
+        system_prompt_fu = (
+            "You are an expert conversation designer.\n"
+            "Task: Rewrite the user's questions into short, natural **Telugu** questions (Telugu Script).\n"
+            "Rules:\n"
+            "1. **Translate Meaning:** Translate the actual questions provided.\n"
+            "2. **Style:** Short, punchy questions.\n"
+            "3. **Vocabulary:** Use simple words like 'ఖర్చు ఎంత?', 'సమయం ఎంత?', 'రిస్క్ ఉందా?', 'మీ వయస్సు ఎంత?'.\n"
+            "4. **Format:** Bullet points.\n"
+        )
+        
+        try:
+            completion_fu = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt_fu},
+                    {"role": "user", "content": follow_ups_content},
+                ],
+                temperature=0.3,
+                max_tokens=200
+            )
+            raw_fu = completion_fu.choices[0].message.content.strip()
+            rewritten_followups = f"\n\n Follow ups :\n{raw_fu}"
+            
+        except Exception as e:
+            print(f"Error re-writing Telugu follow-ups: {e}")
+            rewritten_followups = f"\n\n Follow ups :\n{follow_ups_content}"
+
+    return rewritten_body + rewritten_followups
 
 def _friendly_name(name: Optional[str]) -> Optional[str]:
     if not name:
@@ -176,10 +364,12 @@ def classify_message(message: str) -> Dict[str, Any]:
     2. Use LLM to detect signal (intent).
     Returns: {"language": str, "signal": str}
     """
-    # 1. Single source of truth for language
-    detected_lang = detect_language(message)
     
-    # 2. Detect Signal via LLM
+    # Default fallback
+    detected_lang = detect_language(message)
+    signal = "SMALLTALK"
+
+    # Use LLM for both Signal and Language detection
     try:
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -193,6 +383,15 @@ def classify_message(message: str) -> Dict[str, Any]:
         import json
         data = json.loads(completion.choices[0].message.content)
         signal = data.get("signal", "SMALLTALK")
+        llm_lang = data.get("language", "")
+        
+        if llm_lang:
+            detected_lang = llm_lang.lower()
+            
+            # Refinement: If LLM says "Telugu" but input has no Telugu script, it's Tinglish
+            if detected_lang == "telugu" and not contains_telugu_unicode(message):
+                detected_lang = "tinglish"
+                
     except Exception as e:
         print(f"Classification error: {e}")
         signal = "SMALLTALK" # Fail safe

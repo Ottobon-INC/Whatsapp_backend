@@ -22,6 +22,7 @@ from modules.response_builder import (
     contains_telugu_unicode,
     is_mostly_english,
     force_rewrite_to_tinglish,
+    force_rewrite_to_telugu,
 )
 from modules.conversation import save_user_message, save_sakhi_message, get_last_messages
 from modules.user_answers import save_bulk_answers
@@ -298,7 +299,13 @@ async def sakhi_chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Failed to save user message: {e}")
 
     # STEP 0: Decide routing using Model Gateway
-    route = model_gateway.decide_route(req.message)
+    # NOTE: Router works best with English. Translate first for routing check?
+    from modules.translation_service import translate_query 
+    # Translate for internal logic only (routing + search)
+    english_intent_query = translate_query(req.message, target_lang="en")
+    
+    # Pass English query to router for better accuracy on non-English inputs
+    route = model_gateway.decide_route(english_intent_query)
 
     # Step 1: classify message
     try:
@@ -359,8 +366,11 @@ async def sakhi_chat(req: ChatRequest):
         # Light cleanup of output
         final_ans = guardrails.clean_output(final_ans)
         
-        # NUCLEAR CLEANUP for specific banned words
+        # STRIP FOLLOW-UP QUESTIONS for small talk (SLM_DIRECT should not have follow-ups)
         import re
+        final_ans = re.sub(r'(?i)\n\s*follow\s*-?\s*ups?\s*:.*$', '', final_ans, flags=re.DOTALL).strip()
+        
+        # NUCLEAR CLEANUP for specific banned words
         final_ans = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', final_ans).strip()
 
         # Award points asynchronously (CONVERSATIONAL = 1 pt)
@@ -375,27 +385,37 @@ async def sakhi_chat(req: ChatRequest):
     
     # ===== ROUTE 2: SLM_RAG (Simple medical, RAG + SLM) =====
     elif route == Route.SLM_RAG:
-        # Perform RAG search
+        # Perform RAG search using TRANSLATED QUERY for better recall
         try:
-            kb_results, best_similarity = hierarchical_rag_query(req.message)
+            # We pass the translated english query to the search function
+            # Use english_intent_query for RAG search as it yields better semantic matches
+            search_query = english_intent_query if english_intent_query else req.message
+            kb_results, rag_best_similarity = hierarchical_rag_query(search_query) 
             context_text = format_hierarchical_context(kb_results)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to perform RAG search: {e}")
         
         # Generate response using SLM with context
         try:
+            # STRATEGY CHANGE for Tinglish & Telugu:
+            # 1. Ask SLM for English (Ensures factual accuracy from RAG)
+            # 2. Use GPT-4o-mini to translate to natural Tinglish/Telugu
+            effective_lang = "English" if target_lang in ["Tinglish", "Telugu"] else target_lang
+
             final_ans = await slm_client.generate_rag_response(
                 context=context_text,
-                message=req.message,
-                language=target_lang,
+                message=req.message, # Keep original message for personality/tone matching
+                language=effective_lang,
                 user_name=user_name,
             )
 
-            # HARD ENFORCEMENT: Tinglish check for SLM
-            if target_lang.lower() == "tinglish":
-                 if contains_telugu_unicode(final_ans) or is_mostly_english(final_ans):
-                     print("⚠️ SLM Validation Failure. Forcing Rewrite.")
-                     final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+            # FORCE REWRITE
+            if target_lang == "Tinglish":
+                 print(f"ℹ️  Tinglish requested. Converting English SLM response to Tinglish...")
+                 final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+            elif target_lang == "Telugu":
+                 print(f"ℹ️  Telugu requested. Converting English SLM response to Telugu...")
+                 final_ans = force_rewrite_to_telugu(final_ans, user_name=user_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM RAG response: {e}")
         
@@ -434,7 +454,11 @@ async def sakhi_chat(req: ChatRequest):
         cleaned_reply = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', cleaned_reply).strip()
         response_payload["reply"] = cleaned_reply
         
-        # Award points asynchronously (NEW_QUESTION=5pt or MEDICAL=3pt)
+        # Award points asynchronously
+        best_similarity = 0.0
+        if kb_results:
+             best_similarity = max((item.get("similarity", 0) for item in kb_results), default=0.0)
+
         reward_type = classify_for_reward(route="slm_rag", rag_similarity=best_similarity)
         asyncio.create_task(award_points(user_id, reward_type))
         
@@ -498,8 +522,6 @@ async def sakhi_chat(req: ChatRequest):
     response_payload["reply"] = guardrails.clean_output(final_ans)
     
     # Award points asynchronously (MEDICAL = 3 pts for OpenAI RAG)
-    # Note: OpenAI RAG uses generate_medical_response which has its own RAG internally
-    # We award MEDICAL points since this is for complex medical queries
     asyncio.create_task(award_points(user_id, RewardType.MEDICAL))
     
     # Safe logging to avoid Unicode errors on Windows console
