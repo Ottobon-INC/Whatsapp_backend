@@ -1,14 +1,17 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from supabase_client import supabase_rpc
 from rag import generate_embedding
 
-def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4) -> List[Dict[str, Any]]:
+def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4) -> Tuple[List[Dict[str, Any]], float]:
     """
     Performs a hierarchical search:
     1. Embeds the user question.
     2. Searches 'section_chunks' for matches (Hierarchical) -> Primary Source for Answer.
     3. Searches 'faq' table for matches (FAQ) -> Primary Source for YouTube Link.
     4. Merges and returns results.
+    
+    Returns:
+        Tuple of (results_list, best_similarity_score)
     """
     print(f"Querying: {user_question}...")
     
@@ -57,7 +60,10 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
     except Exception as e:
         print(f"FAQ search failed: {e}")
     
-    return merged_results
+    # Calculate best similarity score for reward system
+    best_similarity = max((r.get("similarity", 0) for r in merged_results), default=0.0)
+    
+    return merged_results, best_similarity
 
 def format_hierarchical_context(results: List[Dict[str, Any]]) -> str:
     """
@@ -107,7 +113,7 @@ Content: {content}
 # --- TEST ---
 if __name__ == "__main__":
     q = "How much does IVF cost?"
-    results = hierarchical_rag_query(q)
+    results, best_sim = hierarchical_rag_query(q)
     context = format_hierarchical_context(results)
     
     with open("debug_output.txt", "w", encoding="utf-8") as f:

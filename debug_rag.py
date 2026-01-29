@@ -11,7 +11,7 @@ def test_query():
     with open("debug_output_utf8.txt", "w", encoding="utf-8") as f:
         f.write(f"Testing query: '{query}'\n")
         
-        results = hierarchical_rag_query(query)
+        results, _similarity = hierarchical_rag_query(query)
         
         f.write("\n--- Raw Results ---\n")
         for i, res in enumerate(results):

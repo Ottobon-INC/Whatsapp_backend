@@ -264,7 +264,7 @@ def generate_medical_response(
 ) -> Tuple[str, List[dict]]:
     
     # 1. RAG Retrieval
-    kb_results = hierarchical_rag_query(prompt)
+    kb_results, _similarity = hierarchical_rag_query(prompt)
     context_text = format_hierarchical_context(kb_results)
     has_history = bool(history)
     history_block = _build_history_block(history)

@@ -30,6 +30,14 @@ from modules.slm_client import get_slm_client
 from modules.guardrails import get_guardrails
 from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 from modules.lead_manager import handle_lead_flow, _get_chat_state
+from modules.user_rewards import (
+    award_points,
+    store_new_question,
+    get_user_rewards,
+    classify_for_reward,
+    RewardType,
+)
+import asyncio
 
 app = FastAPI()
 
@@ -240,6 +248,14 @@ async def sakhi_chat(req: ChatRequest):
             "image": "Sakhi_intro.png"
         }
 
+    # 2.0 Check /rewards command
+    if msg.lower() == "/rewards":
+        total = get_user_rewards(user_id)
+        return {
+            "reply": f"🏆 You have earned {total} reward points! Keep asking questions to earn more.",
+            "mode": "rewards"
+        }
+
     # 2.1 Check Lead Feature Flow (/newlead or in-progress)
     try:
         # Check separate state table, do NOT rely on user['context']
@@ -347,6 +363,9 @@ async def sakhi_chat(req: ChatRequest):
         import re
         final_ans = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', final_ans).strip()
 
+        # Award points asynchronously (CONVERSATIONAL = 1 pt)
+        asyncio.create_task(award_points(user_id, RewardType.CONVERSATIONAL))
+
         return {
             "reply": final_ans,
             "mode": "general",
@@ -358,7 +377,7 @@ async def sakhi_chat(req: ChatRequest):
     elif route == Route.SLM_RAG:
         # Perform RAG search
         try:
-            kb_results = hierarchical_rag_query(req.message)
+            kb_results, best_similarity = hierarchical_rag_query(req.message)
             context_text = format_hierarchical_context(kb_results)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to perform RAG search: {e}")
@@ -415,6 +434,14 @@ async def sakhi_chat(req: ChatRequest):
         cleaned_reply = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', cleaned_reply).strip()
         response_payload["reply"] = cleaned_reply
         
+        # Award points asynchronously (NEW_QUESTION=5pt or MEDICAL=3pt)
+        reward_type = classify_for_reward(route="slm_rag", rag_similarity=best_similarity)
+        asyncio.create_task(award_points(user_id, reward_type))
+        
+        # Store new questions for KB expansion
+        if reward_type == RewardType.NEW_QUESTION:
+            asyncio.create_task(store_new_question(user_id, req.message, best_similarity))
+        
         # Safe logging to avoid Unicode errors on Windows console
         try:
             print(f"Response Payload: {response_payload}")
@@ -469,6 +496,11 @@ async def sakhi_chat(req: ChatRequest):
     
     # Light cleanup of output
     response_payload["reply"] = guardrails.clean_output(final_ans)
+    
+    # Award points asynchronously (MEDICAL = 3 pts for OpenAI RAG)
+    # Note: OpenAI RAG uses generate_medical_response which has its own RAG internally
+    # We award MEDICAL points since this is for complex medical queries
+    asyncio.create_task(award_points(user_id, RewardType.MEDICAL))
     
     # Safe logging to avoid Unicode errors on Windows console
     try:

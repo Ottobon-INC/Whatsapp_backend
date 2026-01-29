@@ -342,28 +342,36 @@ class ModelGateway:
                    f"Medical Complex: {medical_complex_sim:.3f}, "
                    f"Facility Info: {facility_info_sim:.3f}")
         
-        # Routing logic based on thresholds and highest similarity
+        # Find the maximum medical similarity
+        max_medical_sim = max(medical_simple_sim, medical_complex_sim)
+        
+        # Routing logic:
+        # 1. Small talk gets priority if it's above threshold OR if it's clearly the highest
         if small_talk_sim >= self.SMALL_TALK_THRESHOLD:
-            logger.info(f"→ Routing to: SLM_DIRECT (small talk detected)")
+            logger.info(f"→ Routing to: SLM_DIRECT (small talk above threshold)")
             return Route.SLM_DIRECT
         
-        # Check for facility/location queries FIRST - route to SLM since it has this info
-        # This takes priority over medical queries to ensure clinic info is retrieved
+        # 2. Even below threshold, if small talk is highest by a margin, use it
+        #    This catches "Hello" (0.705) vs medical (0.2)
+        if small_talk_sim > max_medical_sim + 0.3:
+            logger.info(f"→ Routing to: SLM_DIRECT (small talk clearly highest)")
+            return Route.SLM_DIRECT
+        
+        # 3. Check for facility/location queries
         if facility_info_sim >= self.FACILITY_INFO_THRESHOLD:
             logger.info(f"→ Routing to: SLM_RAG (facility/location info query)")
             return Route.SLM_RAG
         
-        # Only check medical queries if it's not a facility query
-        if medical_complex_sim >= medical_simple_sim:
-            # Complex medical or default to safest option
-            logger.info(f"→ Routing to: OPENAI_RAG (complex medical or default)")
+        # 4. Medical routing
+        if medical_complex_sim >= medical_simple_sim and medical_complex_sim >= 0.35:
+            logger.info(f"→ Routing to: OPENAI_RAG (complex medical detected)")
             return Route.OPENAI_RAG
         
         if medical_simple_sim >= self.MEDICAL_SIMPLE_THRESHOLD:
             logger.info(f"→ Routing to: SLM_RAG (simple medical query)")
             return Route.SLM_RAG
         
-        # Default to OpenAI for safety when confidence is low
+        # 5. Default to OpenAI for safety when confidence is low
         logger.info(f"→ Routing to: OPENAI_RAG (low confidence, defaulting to safe option)")
         return Route.OPENAI_RAG
 
