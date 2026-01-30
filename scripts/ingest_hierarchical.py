@@ -1,6 +1,11 @@
+import os
+import sys
 import re
 import time
 from typing import List, Dict, Any
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import from existing modules
 from supabase_client import supabase_insert

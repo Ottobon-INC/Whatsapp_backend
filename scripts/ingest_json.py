@@ -1,9 +1,13 @@
+import os
+import sys
 import json
 import time
 from typing import List, Dict, Any
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # --- Import your existing modules ---
-# Ensure supabase_client.py and rag.py are in the same folder
 try:
     from supabase_client import supabase_insert
     from rag import generate_embedding

@@ -1,8 +1,15 @@
 import os
+import sys
+
+# Add parent directory to path for imports and .env loading
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
 import psycopg2
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+# Load .env from project root
+load_dotenv(dotenv_path=os.path.join(PROJECT_ROOT, ".env"), override=True)
 
 DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or os.getenv("IGCCSVC_DB_URL")
 
@@ -10,12 +17,10 @@ if not DB_URL:
     print("❌ DATABASE_URL, SUPABASE_DB_URL, or IGCCSVC_DB_URL not found in .env")
     exit(1)
 
-import sys
-
 if len(sys.argv) > 1:
     SQL_FILE = sys.argv[1]
 else:
-    SQL_FILE = "setup_leads.sql"
+    SQL_FILE = os.path.join(PROJECT_ROOT, "sql", "setup_leads.sql")
 
 if not os.path.exists(SQL_FILE):
     print(f"❌ {SQL_FILE} not found")

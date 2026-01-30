@@ -1,5 +1,11 @@
 # test_language_detection.py
 """Quick test for language detection fixes."""
+import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from modules.detect_lang import detect_language
 
 tests = [

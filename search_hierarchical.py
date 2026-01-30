@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Tuple
+
 from supabase_client import supabase_rpc
 from rag import generate_embedding
 

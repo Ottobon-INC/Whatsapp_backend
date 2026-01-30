@@ -2,9 +2,11 @@
 import asyncio
 import traceback
 import sys
+import os
 import json
 
-sys.path.insert(0, '.')
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def test_chat():
     from main import sakhi_chat, ChatRequest

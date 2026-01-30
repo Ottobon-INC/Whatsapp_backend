@@ -4,10 +4,14 @@ Marketing message automation script.
 Fetches users from sakhi_users table and sends WhatsApp marketing messages
 via the local middleware running on port 3000.
 """
-
+import os
+import sys
 import argparse
 import time
 import requests
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from supabase_client import supabase_select
 

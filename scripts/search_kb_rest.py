@@ -1,7 +1,13 @@
 # search_kb_rest.py
+import os
+import sys
+import requests
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from rag import generate_embedding
 from supabase_client import SUPABASE_URL, SUPABASE_SERVICE_ROLE, HEADERS
-import requests
 import json
 
 def search_sakhi_knowledge(query: str, top_k: int = 5):

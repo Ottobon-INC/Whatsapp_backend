@@ -1,8 +1,8 @@
 import os
 import sys
 
-# Ensure modules can be imported
-sys.path.append(os.getcwd())
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from search_hierarchical import hierarchical_rag_query
 
