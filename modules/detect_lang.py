@@ -12,7 +12,7 @@ TELUGU_GRAMMAR_MARKERS = (
     "gurinchi", "meeru", "nenu", "maaku", "naaku",
     "ante", "avunu", "kaadu", "inka", "kuda",
     "chesaru", "chestaru", "cheyandi", "untundi", "untaru",
-    "cheppandi", "telusukovalani", "anukuntunnara",
+    "cheppandi", "telusukovalani", "anukuntunnara","namaste","namaskaram"
 )
 
 # Common English words that indicate English language
@@ -67,9 +67,9 @@ def detect_language(text: str) -> str:
     # Use regex to split words, ignoring punctuation
     words = re.findall(r'\b\w+\b', text.lower())
     
+
     if not words:
         return "english"
-
     # 1️⃣ Telugu script → Telugu
     if has_telugu_unicode(text):
         return "telugu"
