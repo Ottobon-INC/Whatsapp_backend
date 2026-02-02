@@ -56,7 +56,7 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
                     # Ensure infographic_url is preserved if present
                     if "infographic_url" not in item:
                         item["infographic_url"] = None 
-
+                    
                     merged_results.append(item)
     except Exception as e:
         print(f"FAQ search failed: {e}")
@@ -106,6 +106,15 @@ Content: {content}
 """
 
     final_context = doc_context
+    
+    # ALWAYS append FAQ answer if found (it often contains specific pricing/locations)
+    # Previously this was mutually exclusive, which hid the pricing info
+    for match in results:
+        if match.get("source_type") == "FAQ":
+             faq_answer = match.get("answer", "")
+             if faq_answer:
+                 final_context += f"\n\n*** RELEVANT FAQ ***\nQuestion: {match.get('question', '')}\nAnswer: {faq_answer}\n"
+    
     if youtube_link_found:
         final_context += f"\n\n*** RELEVANT VIDEO ***\nYouTube: {youtube_link_found}\n"
         
@@ -120,4 +129,3 @@ if __name__ == "__main__":
     with open("debug_output.txt", "w", encoding="utf-8") as f:
         f.write(context)
     print("Results written to debug_output.txt")
-

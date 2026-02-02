@@ -29,7 +29,7 @@ from modules.user_answers import save_bulk_answers
 from modules.model_gateway import get_model_gateway, Route
 from modules.slm_client import get_slm_client
 from modules.guardrails import get_guardrails
-from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
+from modules.search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 from modules.lead_manager import handle_lead_flow, _get_chat_state
 from modules.user_rewards import (
     award_points,

@@ -126,6 +126,8 @@ class IntentDetector:
         # Technology (non-health)
         r"\b(iphone|android|laptop|computer|programming|software|coding)\b",
         r"\b(facebook|instagram|twitter|tiktok|youtube)\b",
+        r"\b(html|css|javascript|python|java|sql|api|database|server|cloud)\b",
+        r"\b(wifi|internet|browser|4g|5g|sim card|recharge)\b",
         
         # General topics
         r"\b(recipe|cooking tips|restaurant|food review)\b",

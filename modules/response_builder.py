@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Internal module imports
 from modules.detect_lang import detect_language
 from modules.text_utils import truncate_response
-from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
+from modules.search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 
 # Load env variables (ensure .env is loaded)
 load_dotenv()
