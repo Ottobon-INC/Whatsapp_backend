@@ -1,0 +1,106 @@
+# modules/conversation.py
+from datetime import datetime
+import uuid
+import json
+import logging
+
+# Reverting to Main DB client
+from supabase_client import supabase_insert, supabase_select 
+
+from modules.security import encrypt_message, decrypt_message
+# from modules.secure_db import get_secure_db # No longer used
+from modules.translation_service import translate_query
+
+logger = logging.getLogger(__name__)
+
+def _save_message(user_id: str, message: str, lang: str, message_type: str, chat_id: str | None = None):
+    """
+    Translates -> Encrypts -> Saves to MAIN DB (sakhi_encrypted_chats).
+    """
+    # 0. Translate to English
+    english_text = message
+    if lang != "en":
+        try:
+           english_text = translate_query(message, target_lang="en")
+        except Exception as e:
+           logger.warning(f"Failed to translate message for storage: {e}")
+           english_text = message
+
+    # 1. Encrypt
+    encrypted_data = encrypt_message(user_id, english_text)
+    # encrypted_data is dict: {'ciphertext': '...', 'nonce': '...'}
+    
+    # 2. Payload for MAIN DB
+    payload = {
+        "user_id": user_id,
+        "message_content": encrypted_data["ciphertext"], # Save Ciphertext
+        "nonce": encrypted_data["nonce"],                # Save Nonce separately
+        "role": message_type,
+        "language": "en",
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    # Note: 'chat_id' is optional in schema, we can add if needed
+    # if chat_id:
+    #     payload["chat_id"] = chat_id 
+
+    # 3. Insert into Main DB
+    return supabase_insert("sakhi_encrypted_chats", payload)
+
+
+def save_user_message(user_id: str, text: str, lang: str = "en"):
+    return _save_message(user_id, text, lang, "user")
+
+
+def save_sakhi_message(user_id: str, text: str, lang: str = "en"):
+    chat_id = str(uuid.uuid4())
+    return _save_message(user_id, text, lang, "assistant", chat_id=chat_id)
+
+
+def save_conversation(user_id: str, message: str, message_type: str, language: str):
+    return _save_message(user_id, message, language, message_type)
+
+
+def get_last_messages(user_id: str, limit: int = 5):
+    """
+    Fetch encrypted chats from MAIN DB, Decrypt, and return.
+    """
+    # 1. Fetch from Main DB
+    rows = supabase_select(
+        "sakhi_encrypted_chats",
+        select="*",
+        filters=f"user_id=eq.{user_id}",
+        limit=50 # Grab more to sort
+    )
+
+    if not rows or not isinstance(rows, list):
+        return []
+
+    # Sort logic
+    sorted_rows = sorted(rows, key=lambda r: r.get("created_at", ""), reverse=True)
+    recent = sorted_rows[:limit]
+
+    history = []
+    # Process from Oldest -> Newest
+    for r in reversed(recent): 
+        role = r.get("role", "user")
+        cipher_text = r.get("message_content", "")
+        nonce = r.get("nonce", "")
+        
+        # 2. Decrypt
+        content = "[Message unavailable]"
+        try:
+            # Reconstruct payload expected by security.decrypt_message
+            if cipher_text and nonce:
+                payload = {"ciphertext": cipher_text, "nonce": nonce}
+                content = decrypt_message(user_id, payload)
+            else:
+                # Handle legacy or bad rows
+                logger.warning(f"Missing ciphertext or nonce for msg {r.get('id')}")
+                content = "[Data Corrupt]"
+        except Exception as e:
+            logger.error(f"Error decrypting history row: {e}")
+            content = "[Decryption Error]"
+
+        history.append({"role": role, "content": content})
+
+    return history

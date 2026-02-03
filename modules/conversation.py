@@ -1,10 +1,12 @@
 # modules/conversation.py
 from datetime import datetime
 import uuid
+import json
 import logging
 # Import Security Module - Ensure this module exists!
 from modules.security import encrypt_message, decrypt_message
-from supabase_client import supabase_insert, supabase_select
+# Reverting to Main DB client
+from supabase_client import supabase_insert, supabase_select 
 
 logger = logging.getLogger(__name__)
 

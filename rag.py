@@ -26,7 +26,6 @@ def generate_embedding(text: str):
 
     return resp.data[0].embedding
 
-
 def generate_embeddings_batch(texts: list) -> list:
     """
     Converts a list of texts into embedding vectors using OpenAI's batch API.

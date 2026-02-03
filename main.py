@@ -391,8 +391,6 @@ async def sakhi_chat(req: ChatRequest):
     elif route == Route.SLM_RAG:
         # Perform RAG search using TRANSLATED QUERY for better recall
         try:
-            # We pass the translated english query to the search function
-            # Use english_intent_query for RAG search as it yields better semantic matches
             search_query = english_intent_query if english_intent_query else req.message
             kb_results, rag_best_similarity = hierarchical_rag_query(search_query) 
             context_text = format_hierarchical_context(kb_results)
@@ -408,7 +406,7 @@ async def sakhi_chat(req: ChatRequest):
 
             final_ans = await slm_client.generate_rag_response(
                 context=context_text,
-                message=req.message, # Keep original message for personality/tone matching
+                message=req.message, # Keep original message for personality/tone matching # Keep original message for personality/tone matching
                 language=effective_lang,
                 user_name=user_name,
             )
