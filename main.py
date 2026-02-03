@@ -176,6 +176,10 @@ def register_user(req: RegisterRequest):
 
 @app.post("/sakhi/chat")
 async def sakhi_chat(req: ChatRequest):
+    # DEBUG: Force log to console immediately
+    import sys
+    print(f"\n📨 INCOMING REQUEST: {req.message[:50]}...", flush=True)
+
     # 1. Resolve or Create User
     user = None
     if req.user_id:
