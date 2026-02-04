@@ -1,14 +1,22 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+
 from supabase_client import supabase_rpc
 from rag import generate_embedding
 
+<<<<<<< HEAD:search_hierarchical.py
 def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4, translated_query: str = None) -> List[Dict[str, Any]]:
+=======
+def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4) -> Tuple[List[Dict[str, Any]], float]:
+>>>>>>> 7203a76cddddccc8f418facc3c9996d4844d85f5:modules/search_hierarchical.py
     """
     Performs a hierarchical search:
     1. Embeds the user question (or translated version if provided).
     2. Searches 'section_chunks' for matches (Hierarchical) -> Primary Source for Answer.
     3. Searches 'faq' table for matches (FAQ) -> Primary Source for YouTube Link.
     4. Merges and returns results.
+    
+    Returns:
+        Tuple of (results_list, best_similarity_score)
     """
     search_query = translated_query if translated_query else user_question
     print(f"Querying: {search_query} (Original: {user_question})...")
@@ -53,12 +61,15 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
                     # Ensure infographic_url is preserved if present
                     if "infographic_url" not in item:
                         item["infographic_url"] = None 
-
+                    
                     merged_results.append(item)
     except Exception as e:
         print(f"FAQ search failed: {e}")
     
-    return merged_results
+    # Calculate best similarity score for reward system
+    best_similarity = max((r.get("similarity", 0) for r in merged_results), default=0.0)
+    
+    return merged_results, best_similarity
 
 def format_hierarchical_context(results: List[Dict[str, Any]]) -> str:
     """
@@ -100,6 +111,15 @@ Content: {content}
 """
 
     final_context = doc_context
+    
+    # ALWAYS append FAQ answer if found (it often contains specific pricing/locations)
+    # Previously this was mutually exclusive, which hid the pricing info
+    for match in results:
+        if match.get("source_type") == "FAQ":
+             faq_answer = match.get("answer", "")
+             if faq_answer:
+                 final_context += f"\n\n*** RELEVANT FAQ ***\nQuestion: {match.get('question', '')}\nAnswer: {faq_answer}\n"
+    
     if youtube_link_found:
         final_context += f"\n\n*** RELEVANT VIDEO ***\nYouTube: {youtube_link_found}\n"
         
@@ -108,10 +128,9 @@ Content: {content}
 # --- TEST ---
 if __name__ == "__main__":
     q = "How much does IVF cost?"
-    results = hierarchical_rag_query(q)
+    results, best_sim = hierarchical_rag_query(q)
     context = format_hierarchical_context(results)
     
     with open("debug_output.txt", "w", encoding="utf-8") as f:
         f.write(context)
     print("Results written to debug_output.txt")
-

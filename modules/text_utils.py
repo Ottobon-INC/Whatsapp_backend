@@ -5,7 +5,7 @@ Utility functions for text processing.
 
 import tiktoken
 
-MAX_RESPONSE_LENGTH = 4096
+MAX_RESPONSE_LENGTH = 1024  # WhatsApp-friendly character limit
 
 
 def count_tokens(text: str, model: str = "gpt-4o") -> int:
@@ -64,6 +64,10 @@ def truncate_response(text: str, max_length: int = MAX_RESPONSE_LENGTH) -> str:
     if len(text) <= max_length:
         return text
     
+    
+    # Post-process for WhatsApp formatting
+    text = clean_whatsapp_formatting(text)
+    
     # Truncate to max_length - 3 to add ellipsis
     truncated = text[:max_length - 3].rstrip()
     
@@ -86,3 +90,24 @@ def truncate_response(text: str, max_length: int = MAX_RESPONSE_LENGTH) -> str:
         truncated += "..."
     
     return truncated
+
+def clean_whatsapp_formatting(text: str) -> str:
+    """
+    Ensure formatting is compatible with WhatsApp.
+    1. Convert Asterisk Bullets (* Item) to Hyphen Bullets (- Item).
+    2. Convert Markdown bold (**text**) to WhatsApp bold (*text*).
+    3. Convert Markdown headers (### Header) to Bold (*Header*).
+    """
+    import re
+    
+    # 1. Convert Star Bullets (* Item) to Hyphen Bullets (- Item)
+    # Matches start of line, optional whitespace, asterisk, ONE OR MORE spaces
+    text = re.sub(r'^\s*\*\s+', '- ', text, flags=re.MULTILINE)
+    
+    # 2. Convert **bold** to *bold*
+    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
+    
+    # 3. Convert ### Header to *Header*
+    text = re.sub(r'#+\s*(.*?)\n', r'*\1*\n', text)
+    
+    return text

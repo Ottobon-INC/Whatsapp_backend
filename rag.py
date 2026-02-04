@@ -25,3 +25,30 @@ def generate_embedding(text: str):
     )
 
     return resp.data[0].embedding
+
+
+def generate_embeddings_batch(texts: list) -> list:
+    """
+    Converts a list of texts into embedding vectors using OpenAI's batch API.
+    More efficient than calling generate_embedding() individually for each text.
+    
+    Args:
+        texts: List of text strings to embed
+        
+    Returns:
+        List of embedding vectors (each 1536 dimensions)
+    """
+    if not texts:
+        return []
+    
+    # Clean all texts
+    cleaned_texts = [text.strip().replace("\n", " ") for text in texts]
+    
+    # OpenAI embeddings API accepts a list of inputs
+    resp = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=cleaned_texts
+    )
+    
+    # Return embeddings in the same order as input texts
+    return [item.embedding for item in resp.data]

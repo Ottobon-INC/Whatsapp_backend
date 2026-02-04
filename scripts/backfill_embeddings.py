@@ -7,6 +7,11 @@ Usage:
 Requires:
     - .env with OPENAI_API_KEY and Supabase service role credentials
 """
+import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from supabase_client import supabase_select, supabase_update
 from modules.rag_search import _generate_embedding

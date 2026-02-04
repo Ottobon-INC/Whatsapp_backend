@@ -1,8 +1,13 @@
 """
 Test SLM endpoint integration
 """
-import asyncio
+import os
 import sys
+import asyncio
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from modules.slm_client import get_slm_client
 
 

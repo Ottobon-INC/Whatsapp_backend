@@ -3,9 +3,11 @@
 Test script for the Hybrid Model Architecture routing logic.
 Tests the semantic router with different query types.
 """
-
+import os
 import sys
-sys.path.insert(0, '.')
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.model_gateway import get_model_gateway, Route
 

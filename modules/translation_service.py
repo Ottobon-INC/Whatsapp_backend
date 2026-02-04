@@ -1,58 +1,71 @@
 # modules/translation_service.py
+"""
+Translation service for converting queries between languages.
+Used for routing and internal processing.
+"""
+import os
 import logging
-from deep_translator import GoogleTranslator
-from typing import Optional
+from openai import OpenAI
+from dotenv import load_dotenv
 
-# Configure logging
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Constants
-SOURCE_CACHE = {} # Simple in-memory cache to save API calls
+# Initialize OpenAI client
+_api_key = os.getenv("OPENAI_API_KEY")
+if not _api_key:
+    raise Exception("OPENAI_API_KEY missing")
 
-def translate_query(text: str, source_lang: str = "auto", target_lang: str = "en") -> str:
+client = OpenAI(api_key=_api_key)
+
+
+def translate_query(text: str, target_lang: str = "en") -> str:
     """
-    Translate user query to English for better RAG retrieval.
+    Translate a query to the target language.
     
     Args:
-        text (str): The user's input message.
-        source_lang (str): Source language code ('te' for Telugu, or 'auto').
-        target_lang (str): Target language (default 'en').
+        text: The text to translate
+        target_lang: Target language code (e.g., 'en' for English)
         
     Returns:
-        str: The translated text, or original text if translation fails.
+        Translated text. If translation fails or text is already in target language,
+        returns the original text.
     """
-    text = text.strip()
-    if not text:
-        return ""
-
-    # Check Cache
-    cache_key = f"{text}_{source_lang}_{target_lang}"
-    if cache_key in SOURCE_CACHE:
-        logger.info("Translation cache hit")
-        return SOURCE_CACHE[cache_key]
-
-    try:
-        # Use simple heuristics to avoid translating English
-        # If input is already English-like (ASCII only), skip
-        if text.isascii() and source_lang == "auto":
-             # Double check logic: Tinglish is ASCII but needs translation.
-             # Only skip if we are SURE it's English. 
-             # For safety in this project, we might rely on the 'detect_lang' module beforehand
-             # but here we'll let the translator decide or the caller pass explicit source.
-             pass
-
-        translator = GoogleTranslator(source=source_lang, target=target_lang)
-        translated_text = translator.translate(text)
-        
-        if translated_text:
-            logger.info(f"Translated: '{text[:30]}...' -> '{translated_text[:30]}...'")
-            SOURCE_CACHE[cache_key] = translated_text
-            return translated_text
-            
-    except Exception as e:
-        logger.error(f"Translation failed: {e}")
-        # Fallback: Return original text (better than nothing)
+    if not text or not text.strip():
         return text
-
+    
+    # For routing, we mainly need English translation
+    if target_lang.lower() == "en":
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a translator. Translate the following text to English. "
+                            "If the text is already in English, return it as is. "
+                            "Only return the translated text, nothing else."
+                        )
+                    },
+                    {
+                        "role": "user", 
+                        "content": text
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=500,
+            )
+            
+            translated = response.choices[0].message.content.strip()
+            logger.info(f"Translated '{text[:30]}...' to '{translated[:30]}...'")
+            return translated
+            
+        except Exception as e:
+            logger.warning(f"Translation failed: {e}. Returning original text.")
+            return text
+    
+    # For other languages, just return original (extend as needed)
     return text

@@ -197,6 +197,19 @@ class ModelGateway:
             "fertility blood tests",
             "hormone tests for pregnancy",
             "vitamins needed for conception",
+            "what is folic acid",
+            "benefits of folic acid",
+            "foods rich in iron",
+            "vitamin d benefits",
+            "best vitamins for pregnancy",
+        ],
+        "GENERAL_HEALTH": [
+            "headache remedies",
+            "how to cure headache",
+            "stomach pain home remedies",
+            "common cold treatment",
+            "fever during pregnancy",
+            "is it safe to take paracetamol",
         ],
         "MEDICATION_AND_EXERCISES": [
             "fertility medicines for women",
@@ -259,9 +272,10 @@ class ModelGateway:
     ]
     
     # Similarity thresholds for routing decisions
-    SMALL_TALK_THRESHOLD = 0.75  # High confidence needed for small talk
-    MEDICAL_SIMPLE_THRESHOLD = 0.60  # Moderate confidence for simple medical
-    FACILITY_INFO_THRESHOLD = 0.50  # Lower threshold for facility/location queries to catch more
+    # Lowered thresholds for text-embedding-3-small which produces lower cosine scores
+    SMALL_TALK_THRESHOLD = 0.45  # Was 0.75, then 0.50
+    MEDICAL_SIMPLE_THRESHOLD = 0.45  # Was 0.60
+    FACILITY_INFO_THRESHOLD = 0.40  # Was 0.50
     
     def __init__(self):
         """Initialize the gateway by computing anchor vectors."""
@@ -269,7 +283,15 @@ class ModelGateway:
         
         # Compute mean anchor vectors for each category
         self.small_talk_anchor = self._compute_mean_vector(self.SMALL_TALK_EXAMPLES)
-        self.medical_simple_anchor = self._compute_mean_vector(self.MEDICAL_SIMPLE_EXAMPLES)
+        
+        # Use BATCHED embedding generation to speed up initialization significantly
+        # COMPUTE SEPARATE ANCHORS for each simple medical category to avoid signal dilution
+        self.medical_simple_anchors = {}
+        
+        logger.info("Computing granular anchors for Simple Medical categories...")
+        for key, examples in self.MEDICAL_SIMPLE_EXAMPLES.items():
+            self.medical_simple_anchors[key] = self._compute_mean_vector(examples)
+            
         self.medical_complex_anchor = self._compute_mean_vector(self.MEDICAL_COMPLEX_EXAMPLES)
         self.facility_info_anchor = self._compute_mean_vector(self.FACILITY_INFO_EXAMPLES)
         
@@ -292,7 +314,11 @@ class ModelGateway:
                 flat_examples.extend(category_examples)
             examples = flat_examples
         
-        embeddings = [generate_embedding(example) for example in examples]
+        # Use BATCHED embedding generation to speed up initialization significantly
+        # Avoids making 100+ separate API calls
+        from rag import generate_embeddings_batch
+        
+        embeddings = generate_embeddings_batch(examples)
         mean_vector = np.mean(embeddings, axis=0)
         return mean_vector
     
@@ -331,14 +357,23 @@ class ModelGateway:
         
         # Calculate similarities to each anchor
         small_talk_sim = self._cosine_similarity(user_vector, self.small_talk_anchor)
-        medical_simple_sim = self._cosine_similarity(user_vector, self.medical_simple_anchor)
+        
+        # Calculate MAX similarity across all simple medical categories
+        simple_sims = {}
+        for key, anchor in self.medical_simple_anchors.items():
+            simple_sims[key] = self._cosine_similarity(user_vector, anchor)
+        
+        # Get the best matching category and score
+        best_simple_category = max(simple_sims, key=simple_sims.get) if simple_sims else "NONE"
+        medical_simple_sim = simple_sims[best_simple_category] if simple_sims else 0.0
+        
         medical_complex_sim = self._cosine_similarity(user_vector, self.medical_complex_anchor)
         facility_info_sim = self._cosine_similarity(user_vector, self.facility_info_anchor)
         
         # Log similarity scores for debugging
         logger.info(f"Query: '{user_text[:50]}...'")
         logger.info(f"Similarity scores - Small Talk: {small_talk_sim:.3f}, "
-                   f"Medical Simple: {medical_simple_sim:.3f}, "
+                   f"Medical Simple ({best_simple_category}): {medical_simple_sim:.3f}, "
                    f"Medical Complex: {medical_complex_sim:.3f}, "
                    f"Facility Info: {facility_info_sim:.3f}")
         

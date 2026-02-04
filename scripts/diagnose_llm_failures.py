@@ -229,7 +229,7 @@ FAILURE_ANALYSIS = """
    Status: ❌ Not implemented
 
 6️⃣  IMPROVE RAG THRESHOLD (LOW PRIORITY)
-   Location: search_hierarchical.py
+   Location: modules/search_hierarchical.py
    Change: Increase match_threshold to 0.5 for higher quality matches
    Status: ❌ Not implemented
 

@@ -22,14 +22,23 @@ from modules.response_builder import (
     contains_telugu_unicode,
     is_mostly_english,
     force_rewrite_to_tinglish,
+    force_rewrite_to_telugu,
 )
 from modules.conversation import save_user_message, save_sakhi_message, get_last_messages
 from modules.user_answers import save_bulk_answers
 from modules.model_gateway import get_model_gateway, Route
 from modules.slm_client import get_slm_client
 from modules.guardrails import get_guardrails
-from search_hierarchical import hierarchical_rag_query, format_hierarchical_context
+from modules.search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 from modules.lead_manager import handle_lead_flow, _get_chat_state
+from modules.user_rewards import (
+    award_points,
+    store_new_question,
+    get_user_rewards,
+    classify_for_reward,
+    RewardType,
+)
+import asyncio
 
 app = FastAPI()
 
@@ -240,6 +249,14 @@ async def sakhi_chat(req: ChatRequest):
             "image": "Sakhi_intro.png"
         }
 
+    # 2.0 Check /rewards command
+    if msg.lower() == "/rewards":
+        total = get_user_rewards(user_id)
+        return {
+            "reply": f"🏆 You have earned {total} reward points! Keep asking questions to earn more.",
+            "mode": "rewards"
+        }
+
     # 2.1 Check Lead Feature Flow (/newlead or in-progress)
     try:
         # Check separate state table, do NOT rely on user['context']
@@ -349,9 +366,15 @@ async def sakhi_chat(req: ChatRequest):
         # Light cleanup of output
         final_ans = guardrails.clean_output(final_ans)
         
-        # NUCLEAR CLEANUP for specific banned words
+        # STRIP FOLLOW-UP QUESTIONS for small talk (SLM_DIRECT should not have follow-ups)
         import re
+        final_ans = re.sub(r'(?i)\n\s*follow\s*-?\s*ups?\s*:.*$', '', final_ans, flags=re.DOTALL).strip()
+        
+        # NUCLEAR CLEANUP for specific banned words
         final_ans = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', final_ans).strip()
+
+        # Award points asynchronously (CONVERSATIONAL = 1 pt)
+        asyncio.create_task(award_points(user_id, RewardType.CONVERSATIONAL))
 
         return {
             "reply": final_ans,
@@ -365,25 +388,34 @@ async def sakhi_chat(req: ChatRequest):
         # Perform RAG search using TRANSLATED QUERY for better recall
         try:
             # We pass the translated english query to the search function
-            kb_results = hierarchical_rag_query(req.message, translated_query=english_intent_query)
+            # Use english_intent_query for RAG search as it yields better semantic matches
+            search_query = english_intent_query if english_intent_query else req.message
+            kb_results, rag_best_similarity = hierarchical_rag_query(search_query) 
             context_text = format_hierarchical_context(kb_results)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to perform RAG search: {e}")
         
         # Generate response using SLM with context
         try:
+            # STRATEGY CHANGE for Tinglish & Telugu:
+            # 1. Ask SLM for English (Ensures factual accuracy from RAG)
+            # 2. Use GPT-4o-mini to translate to natural Tinglish/Telugu
+            effective_lang = "English" if target_lang in ["Tinglish", "Telugu"] else target_lang
+
             final_ans = await slm_client.generate_rag_response(
                 context=context_text,
                 message=req.message, # Keep original message for personality/tone matching
-                language=target_lang,
+                language=effective_lang,
                 user_name=user_name,
             )
 
-            # HARD ENFORCEMENT: Tinglish check for SLM
-            if target_lang.lower() == "tinglish":
-                 if contains_telugu_unicode(final_ans) or is_mostly_english(final_ans):
-                     print("⚠️ SLM Validation Failure. Forcing Rewrite.")
-                     final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+            # FORCE REWRITE
+            if target_lang == "Tinglish":
+                 print(f"ℹ️  Tinglish requested. Converting English SLM response to Tinglish...")
+                 final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+            elif target_lang == "Telugu":
+                 print(f"ℹ️  Telugu requested. Converting English SLM response to Telugu...")
+                 final_ans = force_rewrite_to_telugu(final_ans, user_name=user_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM RAG response: {e}")
         
@@ -421,6 +453,18 @@ async def sakhi_chat(req: ChatRequest):
         import re
         cleaned_reply = re.sub(r'(?i)\b(aam|aayi)\b[,.]*', '', cleaned_reply).strip()
         response_payload["reply"] = cleaned_reply
+        
+        # Award points asynchronously
+        best_similarity = 0.0
+        if kb_results:
+             best_similarity = max((item.get("similarity", 0) for item in kb_results), default=0.0)
+
+        reward_type = classify_for_reward(route="slm_rag", rag_similarity=best_similarity)
+        asyncio.create_task(award_points(user_id, reward_type))
+        
+        # Store new questions for KB expansion
+        if reward_type == RewardType.NEW_QUESTION:
+            asyncio.create_task(store_new_question(user_id, req.message, best_similarity))
         
         # Safe logging to avoid Unicode errors on Windows console
         try:
@@ -476,6 +520,9 @@ async def sakhi_chat(req: ChatRequest):
     
     # Light cleanup of output
     response_payload["reply"] = guardrails.clean_output(final_ans)
+    
+    # Award points asynchronously (MEDICAL = 3 pts for OpenAI RAG)
+    asyncio.create_task(award_points(user_id, RewardType.MEDICAL))
     
     # Safe logging to avoid Unicode errors on Windows console
     try:
