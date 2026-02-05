@@ -5,7 +5,7 @@ Used for routing and internal processing.
 """
 import os
 import logging
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,10 +18,10 @@ _api_key = os.getenv("OPENAI_API_KEY")
 if not _api_key:
     raise Exception("OPENAI_API_KEY missing")
 
-client = OpenAI(api_key=_api_key)
+client = AsyncOpenAI(api_key=_api_key)
 
 
-def translate_query(text: str, target_lang: str = "en") -> str:
+async def translate_query(text: str, target_lang: str = "en") -> str:
     """
     Translate a query to the target language.
     
@@ -39,7 +39,7 @@ def translate_query(text: str, target_lang: str = "en") -> str:
     # For routing, we mainly need English translation
     if target_lang.lower() == "en":
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {

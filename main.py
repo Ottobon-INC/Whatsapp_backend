@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
 
 from modules.user_profile import (
     create_user,
@@ -301,17 +302,25 @@ async def sakhi_chat(req: ChatRequest):
     # STEP 0: Decide routing using Model Gateway
     # NOTE: Router works best with English. Translate first for routing check?
     from modules.translation_service import translate_query 
+    # STEP 0: Parallelize Translation and Classification
+    # To reduce latency, we run these independent tasks concurrently.
+    
+    # 1. Start Translation (Independent)
     # Translate for internal logic only (routing + search)
-    english_intent_query = translate_query(req.message, target_lang="en")
+    translation_task = asyncio.create_task(translate_query(req.message, target_lang="en"))
+    
+    # 2. Start Classification (Independent)
+    classification_task = asyncio.create_task(classify_message(req.message))
+
+    # Wait for both to complete
+    try:
+        english_intent_query, classification = await asyncio.gather(translation_task, classification_task)
+    except Exception as e:
+         # If classification fails, we might still have translation, but better to fail safe
+         raise HTTPException(status_code=500, detail=f"Failed during initial processing: {e}")
     
     # Pass English query to router for better accuracy on non-English inputs
     route = await model_gateway.decide_route(english_intent_query)
-
-    # Step 1: classify message
-    try:
-        classification = await classify_message(req.message)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to classify message: {e}")
     # STEP: Decide FINAL response language (single source of truth)
     detected_lang = classification.get("language", "en").lower()
     signal = classification.get("signal", "NO")
