@@ -2,7 +2,7 @@ import os
 import re
 from typing import List, Dict, Optional, Tuple, Any
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 # Internal module imports
@@ -17,7 +17,7 @@ _api_key = os.getenv("OPENAI_API_KEY")
 if not _api_key:
     raise Exception("OPENAI_API_KEY missing")
 
-client = OpenAI(api_key=_api_key)
+client = AsyncOpenAI(api_key=_api_key)
 
 # =============================================================================
 # CONSTANTS & PROMPTS
@@ -97,7 +97,7 @@ def is_mostly_english(text: str) -> bool:
     # Tinglish might have 'is' or 'and' but rarely 'the', 'of', 'for' in valid grammatical positions.
     return ratio > 0.15
 
-def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str:
+async def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str:
     """
     Forcefully rewrite text into Tinglish (Roman script).
     Splits content into Main Body and Follow-ups to process them separately.
@@ -179,7 +179,7 @@ def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str
          system_prompt_body += "9. The user's name is UNKNOWN. Do NOT use any name or title (like Ma'am/Sir/Aayi). Just start the sentence.\n"
 
     try:
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt_body},
@@ -229,7 +229,7 @@ def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str
         )
         
         try:
-            completion_fu = client.chat.completions.create(
+            completion_fu = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt_fu},
@@ -250,7 +250,7 @@ def force_rewrite_to_tinglish(text: str, user_name: Optional[str] = None) -> str
     # 4. COMBINE
     return rewritten_body + rewritten_followups
 
-def force_rewrite_to_telugu(text: str, user_name: Optional[str] = None) -> str:
+async def force_rewrite_to_telugu(text: str, user_name: Optional[str] = None) -> str:
     """
     Forcefully rewrite text into Colloquial Telugu (Telugu Script).
     Splits content into Main Body and Follow-ups to process them separately.
@@ -283,7 +283,6 @@ def force_rewrite_to_telugu(text: str, user_name: Optional[str] = None) -> str:
         "3. *Medical Terms:* You may keep common acronyms like 'IVF', 'ICSI' in English if strictly needed, or transliterate them (ఐవిఎఫ్).\n"
         "4. *Style:* Simple spoken Telugu, not bookish.\n"
         "5. *Structure:* Use Hyphens (- ) for bullet points. Format as '*Topic*: Description'. Use single asterisks (*) for bold text in WhatsApp.\n"
-        "   - *CRITICAL:* Preserve the Introduction sentence.\n"
         "6. *Vocabulary:* Use 'Lab lo' instead of 'Body bayata'. Use 'Magavallu' for Men (Not 'Manishi').\n"
     )
 
@@ -291,7 +290,7 @@ def force_rewrite_to_telugu(text: str, user_name: Optional[str] = None) -> str:
          system_prompt_body += f"5. Greeting: Start with 'హాయ్ {user_name},'. Do NOT translate the name (keep it if simple, or transliterate).\n"
 
     try:
-        completion_body = client.chat.completions.create(
+        completion_body = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt_body},
@@ -319,7 +318,7 @@ def force_rewrite_to_telugu(text: str, user_name: Optional[str] = None) -> str:
         )
         
         try:
-            completion_fu = client.chat.completions.create(
+            completion_fu = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt_fu},
@@ -369,7 +368,7 @@ def _build_history_block(history: Optional[List[Dict[str, str]]]) -> str:
 # PUBLIC FUNCTIONS
 # =============================================================================
 
-def classify_message(message: str) -> Dict[str, Any]:
+async def classify_message(message: str) -> Dict[str, Any]:
     """
     1. Deterministically detect language.
     2. Use LLM to detect signal (intent).
@@ -382,7 +381,7 @@ def classify_message(message: str) -> Dict[str, Any]:
 
     # Use LLM for both Signal and Language detection
     try:
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": CLASSIFIER_SYS_PROMPT},
@@ -412,7 +411,7 @@ def classify_message(message: str) -> Dict[str, Any]:
         "signal": signal
     }
 
-def generate_smalltalk_response(
+async def generate_smalltalk_response(
     prompt: str,
     target_lang: str,
     history: Optional[List[Dict[str, str]]],
@@ -442,7 +441,7 @@ def generate_smalltalk_response(
     )
 
     try:
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_content},
@@ -458,7 +457,7 @@ def generate_smalltalk_response(
         # HARD ENFORCEMENT: Tinglish check
         if target_lang.lower() == "tinglish":
             if contains_telugu_unicode(response_text) or is_mostly_english(response_text):
-                 response_text = force_rewrite_to_tinglish(response_text, user_name=user_name)
+                 response_text = await force_rewrite_to_tinglish(response_text, user_name=user_name)
             
         return response_text
 
@@ -466,7 +465,7 @@ def generate_smalltalk_response(
         print(f"Smalltalk gen error: {e}")
         return "I am sorry, I am having trouble thinking right now."
 
-def generate_medical_response(
+async def generate_medical_response(
     prompt: str,
     target_lang: str,
     history: Optional[List[Dict[str, str]]],
@@ -474,7 +473,7 @@ def generate_medical_response(
 ) -> Tuple[str, List[dict]]:
     
     # 1. RAG Retrieval
-    kb_results, _similarity = hierarchical_rag_query(prompt)
+    kb_results, _similarity = await hierarchical_rag_query(prompt)
     context_text = format_hierarchical_context(kb_results)
     has_history = bool(history)
     history_block = _build_history_block(history)
@@ -521,7 +520,7 @@ def generate_medical_response(
 
     # 3. LLM Generation
     try:
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_content},
@@ -537,7 +536,7 @@ def generate_medical_response(
         # HARD ENFORCEMENT: Tinglish check
         if target_lang.lower() == "tinglish":
             if contains_telugu_unicode(response_text) or is_mostly_english(response_text):
-                 response_text = force_rewrite_to_tinglish(response_text, user_name=user_name)
+                 response_text = await force_rewrite_to_tinglish(response_text, user_name=user_name)
             
         return response_text, kb_results
 

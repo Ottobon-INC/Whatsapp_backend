@@ -102,3 +102,39 @@ def supabase_rpc(function_name: str, params: Dict[str, Any]):
         return res.data
 
     return res
+
+import asyncio
+
+async def async_supabase_rpc(function_name: str, params: Dict[str, Any]):
+    """
+    Async wrapper for supabase_rpc using asyncio.to_thread.
+    """
+    return await asyncio.to_thread(supabase_rpc, function_name, params)
+
+
+async def async_supabase_insert(table: str, data: Dict[str, Any]):
+    """
+    Async wrapper for supabase_insert.
+    """
+    return await asyncio.to_thread(supabase_insert, table, data)
+
+async def async_supabase_select(
+    table: str,
+    select: str = "*",
+    filters: str = "",
+    limit: Optional[int] = None,
+    rpc: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+):
+    """
+    Async wrapper for supabase_select.
+    """
+    return await asyncio.to_thread(
+        supabase_select, 
+        table=table, 
+        select=select, 
+        filters=filters, 
+        limit=limit, 
+        rpc=rpc, 
+        payload=payload
+    )

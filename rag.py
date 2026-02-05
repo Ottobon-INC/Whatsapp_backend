@@ -1,8 +1,7 @@
-# rag.py
 import os
-
+import asyncio
 import supabase_client  # ensures .env is loaded once
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 
 EMBEDDING_MODEL = "text-embedding-3-small"  # 1536 dimensions
 
@@ -11,6 +10,7 @@ if not _api_key:
     raise Exception("OPENAI_API_KEY missing")
 
 client = OpenAI(api_key=_api_key)
+async_client = AsyncOpenAI(api_key=_api_key)
 
 
 def generate_embedding(text: str):
@@ -20,6 +20,20 @@ def generate_embedding(text: str):
     cleaned = text.strip().replace("\n", " ")
 
     resp = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=cleaned
+    )
+
+    return resp.data[0].embedding
+
+
+async def async_generate_embedding(text: str):
+    """
+    Async version of generate_embedding.
+    """
+    cleaned = text.strip().replace("\n", " ")
+
+    resp = await async_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=cleaned
     )
@@ -46,6 +60,26 @@ def generate_embeddings_batch(texts: list) -> list:
     
     # OpenAI embeddings API accepts a list of inputs
     resp = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=cleaned_texts
+    )
+    
+    # Return embeddings in the same order as input texts
+    return [item.embedding for item in resp.data]
+
+
+async def async_generate_embeddings_batch(texts: list) -> list:
+    """
+    Async version of generate_embeddings_batch.
+    """
+    if not texts:
+        return []
+    
+    # Clean all texts
+    cleaned_texts = [text.strip().replace("\n", " ") for text in texts]
+    
+    # OpenAI embeddings API accepts a list of inputs
+    resp = await async_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=cleaned_texts
     )

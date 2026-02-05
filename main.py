@@ -305,11 +305,11 @@ async def sakhi_chat(req: ChatRequest):
     english_intent_query = translate_query(req.message, target_lang="en")
     
     # Pass English query to router for better accuracy on non-English inputs
-    route = model_gateway.decide_route(english_intent_query)
+    route = await model_gateway.decide_route(english_intent_query)
 
     # Step 1: classify message
     try:
-        classification = classify_message(req.message)
+        classification = await classify_message(req.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to classify message: {e}")
     # STEP: Decide FINAL response language (single source of truth)
@@ -354,7 +354,7 @@ async def sakhi_chat(req: ChatRequest):
             if target_lang.lower() == "tinglish":
                  if contains_telugu_unicode(final_ans) or is_mostly_english(final_ans):
                      print("⚠️ SLM Validation Failure. Forcing Rewrite.")
-                     final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+                     final_ans = await force_rewrite_to_tinglish(final_ans, user_name=user_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM chat response: {e}")
         
@@ -390,7 +390,7 @@ async def sakhi_chat(req: ChatRequest):
             # We pass the translated english query to the search function
             # Use english_intent_query for RAG search as it yields better semantic matches
             search_query = english_intent_query if english_intent_query else req.message
-            kb_results, rag_best_similarity = hierarchical_rag_query(search_query) 
+            kb_results, rag_best_similarity = await hierarchical_rag_query(search_query) 
             context_text = format_hierarchical_context(kb_results)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to perform RAG search: {e}")
@@ -412,10 +412,10 @@ async def sakhi_chat(req: ChatRequest):
             # FORCE REWRITE
             if target_lang == "Tinglish":
                  print(f"ℹ️  Tinglish requested. Converting English SLM response to Tinglish...")
-                 final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+                 final_ans = await force_rewrite_to_tinglish(final_ans, user_name=user_name)
             elif target_lang == "Telugu":
                  print(f"ℹ️  Telugu requested. Converting English SLM response to Telugu...")
-                 final_ans = force_rewrite_to_telugu(final_ans, user_name=user_name)
+                 final_ans = await force_rewrite_to_telugu(final_ans, user_name=user_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM RAG response: {e}")
         
@@ -480,7 +480,7 @@ async def sakhi_chat(req: ChatRequest):
     # ===== ROUTE 3: OPENAI_RAG (Complex medical or default, RAG + GPT-4) =====
     # Medical mode: RAG
     try:
-        final_ans, _kb = generate_medical_response(
+        final_ans, _kb = await generate_medical_response(
             prompt=req.message,
             target_lang=target_lang,
             history=history,

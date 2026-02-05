@@ -1,9 +1,9 @@
 from typing import List, Dict, Any, Tuple
 
-from supabase_client import supabase_rpc
-from rag import generate_embedding
+from supabase_client import async_supabase_rpc
+from rag import async_generate_embedding
 
-def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4) -> Tuple[List[Dict[str, Any]], float]:
+async def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4) -> Tuple[List[Dict[str, Any]], float]:
     """
     Performs a hierarchical search:
     1. Embeds the user question.
@@ -17,7 +17,7 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
     print(f"Querying: {user_question}...")
     
     # 1. Embed user query
-    query_vector = generate_embedding(user_question)
+    query_vector = await async_generate_embedding(user_question)
     
     # 2. Call Supabase RPC functions
     params = {
@@ -30,7 +30,7 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
 
     # A. Search Hierarchical Docs (Primary Content)
     try:
-        doc_results = supabase_rpc("hierarchical_search", params)
+        doc_results = await async_supabase_rpc("hierarchical_search", params)
         if doc_results:
             for item in doc_results:
                 item["source_type"] = "DOCUMENT"
@@ -47,7 +47,7 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
     }
     
     try:
-        faq_results = supabase_rpc("match_faq", faq_params)
+        faq_results = await async_supabase_rpc("match_faq", faq_params)
         if faq_results:
             for item in faq_results:
                 # Only add if it has a YouTube link or if we have no other results

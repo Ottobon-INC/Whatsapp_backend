@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Dict, Union
 import numpy as np
 
-from rag import generate_embedding
+from rag import generate_embedding, async_generate_embedding
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -342,7 +342,7 @@ class ModelGateway:
         
         return dot_product / (norm1 * norm2)
     
-    def decide_route(self, user_text: str) -> Route:
+    async def decide_route(self, user_text: str) -> Route:
         """
         Determine the appropriate route for a user query based on semantic similarity.
         
@@ -353,7 +353,7 @@ class ModelGateway:
             Route enum indicating which model to use
         """
         # Generate embedding for user input
-        user_vector = np.array(generate_embedding(user_text))
+        user_vector = np.array(await async_generate_embedding(user_text))
         
         # Calculate similarities to each anchor
         small_talk_sim = self._cosine_similarity(user_vector, self.small_talk_anchor)
