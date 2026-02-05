@@ -36,6 +36,28 @@ If target language is ENGLISH:
 
 
 
+
+SLM_INTENT_PROMPT = """
+You are a helpful assistant.
+Task: Summarize the user's query into a single short sentence (max 1 sentence).
+This sentence should act as a header or topic summary for the answer.
+
+Examples:
+Input: "What is IVF?"
+Output: "Here is the information about IVF."
+
+Input: "EE age lo pregnancy better?"
+Output: "Pregnancy ee age lo try chesthey better."
+
+Input: "Cost entha?"
+Output: "Here are the cost details."
+
+RULES:
+1. MAX 1 sentence.
+2. Output in the requested TARGET LANGUAGE.
+3. Be direct and polite.
+"""
+
 SLM_SYSTEM_PROMPT_DIRECT = f"""{SLM_LANGUAGE_LOCK}
 You are Sakhi, a friendly AI assistant.
 
@@ -407,6 +429,75 @@ class SLMClient:
             True if no endpoint configured (mock mode), False otherwise
         """
         return self.endpoint_url is None
+
+    async def generate_intent_label(
+        self,
+        message: str,
+        language: str = "en",
+    ) -> str:
+        """
+        Generate a short intent label/summary for the user's message.
+        
+        Args:
+            message: User's message
+            language: Target language
+            
+        Returns:
+            Short intent sentence (max 1 sentence)
+        """
+        logger.info(f"SLM generate_intent_label called - Message: '{message[:30]}...'")
+        
+        if self.endpoint_url:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # Construct prompt
+                    system_instruction = f"{SLM_INTENT_PROMPT}\nTARGET LANGUAGE: {language.upper()}"
+                    
+                    final_question = f"""
+                    {system_instruction}
+                    
+                    USER MESSAGE:
+                    {message}
+                    """
+                    
+                    payload = {
+                        "question": final_question,
+                        "chat_history": "",
+                    }
+                    
+                    headers = {"Content-Type": "application/json"}
+                    if self.api_key and self.api_key != "your-api-key-if-needed":
+                        headers["Authorization"] = f"Bearer {self.api_key}"
+                        
+                    response = await client.post(
+                        self.endpoint_url,
+                        json=payload,
+                        headers=headers,
+                    )
+                    
+                    response.raise_for_status()
+                    result = response.json()
+                    
+                    if isinstance(result, dict):
+                        intent_text = result.get("reply") or result.get("response") or result.get("text") or str(result)
+                    else:
+                        intent_text = str(result)
+                        
+                    # CLEANUP: Remove "Follow ups" and anything after it
+                    import re
+                    intent_text = re.sub(r'(?i)\n\s*follow\s*-?\s*ups\s*:.*$', '', intent_text, flags=re.DOTALL).strip()
+                    # Also generic "Follow up" if present
+                    intent_text = re.sub(r'(?i)follow\s*-?\s*ups?.*', '', intent_text).strip()
+                        
+                    return intent_text.strip()
+                    
+            except Exception as e:
+                logger.error(f"Error generating intent label: {e}")
+                # Fallback to simple generic string if SLM fails
+                return "Here is the information you requested."
+        
+        # Mock mode fallback
+        return f"Here is the info regarding '{message[:20]}...'"
 
 
 # Module-level singleton instance

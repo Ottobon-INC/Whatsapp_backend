@@ -192,7 +192,8 @@ async def sakhi_chat(req: ChatRequest):
                 # Return Welcome Message
                 return {
                     "reply": "Welcome to Sakhi! I'm here to support you on your health journey. ❤️ \n Let's get started! What should I call you? (Please type just your name, e.g., Deepthi)",
-                    "mode": "onboarding"
+                    "mode": "onboarding",
+                    "intent": "The intent is to onboarding the user"
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to register user: {e}")
@@ -216,7 +217,8 @@ async def sakhi_chat(req: ChatRequest):
         update_user_profile(user_id, {"name": msg})
         return {
             "reply": f"Nice to meet you, {msg}! Can you let me know your gender ? (Please reply with 'Male' or 'Female')",
-            "mode": "onboarding"
+            "mode": "onboarding",
+            "intent": "The intent is to ask for gender"
         }
 
     # STATE 2: WAITING FOR GENDER (User sent Gender)
@@ -224,7 +226,8 @@ async def sakhi_chat(req: ChatRequest):
         update_user_profile(user_id, {"gender": msg})
         return {
             "reply": "Got it. And finally, what's your location (City/Town)? (e.g., Vizag)",
-            "mode": "onboarding"
+            "mode": "onboarding",
+            "intent": "The intent is to ask for location"
         }
 
     # STATE 3: WAITING FOR LOCATION (User sent Location)
@@ -247,7 +250,8 @@ async def sakhi_chat(req: ChatRequest):
         return {
             "reply": long_intro,
             "mode": "onboarding_complete",
-            "image": "Sakhi_intro.png"
+            "image": "Sakhi_intro.png",
+            "intent": "The intent is to complete the onboarding"
         }
 
     # 2.0 Check /rewards command
@@ -255,7 +259,8 @@ async def sakhi_chat(req: ChatRequest):
         total = get_user_rewards(user_id)
         return {
             "reply": f"🏆 You have earned {total} reward points! Keep asking questions to earn more.",
-            "mode": "rewards"
+            "mode": "rewards",
+            "intent": "The intent is to show rewards"
         }
 
     # 2.1 Check Lead Feature Flow (/newlead or in-progress)
@@ -312,9 +317,22 @@ async def sakhi_chat(req: ChatRequest):
     # 2. Start Classification (Independent)
     classification_task = asyncio.create_task(classify_message(req.message))
 
-    # Wait for both to complete
+    # 3. Start Intent Label Generation (Independent)
+    # Just initiate it here, we will gather it later
+    # Use detected lang if available, else default to 'en' first, but we don't have it yet.
+    # So we can pass 'en' or wait.
+    # BETTER: Wait for classification/translation first? 
+    # Actually, let's run it parallel with just the raw message. SLM can handle language.
+    # We'll pass the requested language if user explicitly sent one, or just 'en' for now.
+    intent_task = asyncio.create_task(slm_client.generate_intent_label(req.message, language=req.language))
+
+    # Wait for all to complete
     try:
-        english_intent_query, classification = await asyncio.gather(translation_task, classification_task)
+        english_intent_query, classification, intent_label = await asyncio.gather(
+            translation_task, 
+            classification_task, 
+            intent_task
+        )
     except Exception as e:
          # If classification fails, we might still have translation, but better to fail safe
          raise HTTPException(status_code=500, detail=f"Failed during initial processing: {e}")
@@ -389,7 +407,11 @@ async def sakhi_chat(req: ChatRequest):
             "reply": final_ans,
             "mode": "general",
             "language": target_lang,
-            "route": "slm_direct"
+            "reply": final_ans,
+            "mode": "general",
+            "language": target_lang,
+            "route": "slm_direct",
+            "intent": intent_label
         }
     
     # ===== ROUTE 2: SLM_RAG (Simple medical, RAG + SLM) =====
@@ -452,7 +474,9 @@ async def sakhi_chat(req: ChatRequest):
             "language": target_lang,
             "youtube_link": youtube_link,
             "infographic_url": infographic_url,
-            "route": "slm_rag"
+            "infographic_url": infographic_url,
+            "route": "slm_rag",
+            "intent": intent_label
         }
         
         # Light cleanup of output
@@ -524,7 +548,9 @@ async def sakhi_chat(req: ChatRequest):
         "language": target_lang,
         "youtube_link": youtube_link,
         "infographic_url": infographic_url,
-        "route": "openai_rag"
+        "infographic_url": infographic_url,
+        "route": "openai_rag",
+        "intent": intent_label
     }
     
     # Light cleanup of output
