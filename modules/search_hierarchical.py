@@ -3,14 +3,10 @@ from typing import List, Dict, Any, Tuple
 from supabase_client import supabase_rpc
 from rag import generate_embedding
 
-<<<<<<< HEAD:search_hierarchical.py
-def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4, translated_query: str = None) -> List[Dict[str, Any]]:
-=======
 def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, match_count: int = 4) -> Tuple[List[Dict[str, Any]], float]:
->>>>>>> 7203a76cddddccc8f418facc3c9996d4844d85f5:modules/search_hierarchical.py
     """
     Performs a hierarchical search:
-    1. Embeds the user question (or translated version if provided).
+    1. Embeds the user question.
     2. Searches 'section_chunks' for matches (Hierarchical) -> Primary Source for Answer.
     3. Searches 'faq' table for matches (FAQ) -> Primary Source for YouTube Link.
     4. Merges and returns results.
@@ -18,11 +14,10 @@ def hierarchical_rag_query(user_question: str, match_threshold: float = 0.3, mat
     Returns:
         Tuple of (results_list, best_similarity_score)
     """
-    search_query = translated_query if translated_query else user_question
-    print(f"Querying: {search_query} (Original: {user_question})...")
+    print(f"Querying: {user_question}...")
     
-    # 1. Embed user query (using the translated version for English docs)
-    query_vector = generate_embedding(search_query)
+    # 1. Embed user query
+    query_vector = generate_embedding(user_question)
     
     # 2. Call Supabase RPC functions
     params = {

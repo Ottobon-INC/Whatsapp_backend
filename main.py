@@ -29,6 +29,7 @@ from modules.user_answers import save_bulk_answers
 from modules.model_gateway import get_model_gateway, Route
 from modules.slm_client import get_slm_client
 from modules.guardrails import get_guardrails
+from modules.security import get_security_manager
 from modules.search_hierarchical import hierarchical_rag_query, format_hierarchical_context
 from modules.lead_manager import handle_lead_flow, _get_chat_state
 from modules.user_rewards import (
@@ -154,24 +155,7 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/user/register")
-def register_user(req: RegisterRequest):
-    try:
-        user_row = create_user(
-            name=req.name,
-            email=req.email,
-            phone_number=req.phone_number,
-            password=req.password,
-            role=req.role,
-            preferred_language=req.preferred_language,
-            relation=req.user_relation,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-    user_id = user_row.get("user_id")
-
-    return {"status": "success", "user_id": user_id, "user": user_row}
 
 
 @app.post("/sakhi/chat")
@@ -212,7 +196,14 @@ async def sakhi_chat(req: ChatRequest):
 
     # STATE 1: WAITING FOR NAME (User sent Name)
     if not current_name:
+        # Store REAL name in profile (Register Table)
         update_user_profile(user_id, {"name": msg})
+        
+        # Store MASKED name in conversation history (Con Table)
+        sec_manager = get_security_manager()
+        masked_msg = sec_manager.mask_name_direct(msg, user_id)
+        save_user_message(user_id, masked_msg, req.language)
+        
         return {
             "reply": f"Nice to meet you, {msg}! Can you let me know your gender ? (Please reply with 'Male' or 'Female')",
             "mode": "onboarding"
@@ -329,9 +320,13 @@ async def sakhi_chat(req: ChatRequest):
     try:
         profile = get_user_profile(user_id)
         if profile:
-            user_name = profile.get("name")
-            if user_name and not user_name.strip():
-                user_name = None
+            real_name = profile.get("name")
+            if real_name and real_name.strip():
+                # TRANSFORM TO TOKEN FOR LLM
+                sec_manager = get_security_manager()
+                user_name = sec_manager.mask_name_direct(real_name, user_id)
+            else:
+                 user_name = None
     except Exception as e:
         print(f"DEBUGGING ERROR: Failed to fetch profile for name: {e}")
         user_name = None
@@ -349,6 +344,10 @@ async def sakhi_chat(req: ChatRequest):
                 language=target_lang,
                 user_name=user_name,
             )
+            
+            # UNMASK PII IN RESPONSE (Restore "Hi Deepthi")
+            sec_manager = get_security_manager()
+            final_ans = sec_manager.unmask_pii(final_ans, user_id)
 
             # HARD ENFORCEMENT: Tinglish check for SLM
             if target_lang.lower() == "tinglish":
@@ -408,14 +407,20 @@ async def sakhi_chat(req: ChatRequest):
                 language=effective_lang,
                 user_name=user_name,
             )
+            
+            # UNMASK PII IN RESPONSE (Restore "Hi Deepthi")
+            sec_manager = get_security_manager()
+            final_ans = sec_manager.unmask_pii(final_ans, user_id)
 
             # FORCE REWRITE
             if target_lang == "Tinglish":
                  print(f"ℹ️  Tinglish requested. Converting English SLM response to Tinglish...")
-                 final_ans = force_rewrite_to_tinglish(final_ans, user_name=user_name)
+                 # Note: force_rewrite_to_tinglish might need unmasked name to address user correctly?
+                 # Actually, unmasking first is better so GPT sees "Deepthi" and can transliterate/place it correctly.
+                 final_ans = force_rewrite_to_tinglish(final_ans, user_name=real_name) # Pass REAL NAME for rewrite context
             elif target_lang == "Telugu":
                  print(f"ℹ️  Telugu requested. Converting English SLM response to Telugu...")
-                 final_ans = force_rewrite_to_telugu(final_ans, user_name=user_name)
+                 final_ans = force_rewrite_to_telugu(final_ans, user_name=real_name) # Pass REAL NAME for rewrite context
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate SLM RAG response: {e}")
         
@@ -484,8 +489,13 @@ async def sakhi_chat(req: ChatRequest):
             prompt=req.message,
             target_lang=target_lang,
             history=history,
-            user_name=user_name,
+            user_name=user_name, # MASKED TOKEN passed here
         )
+        
+        # UNMASK PII IN RESPONSE (Restore "Hi Deepthi")
+        sec_manager = get_security_manager()
+        final_ans = sec_manager.unmask_pii(final_ans, user_id)
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate medical response: {e}")
 

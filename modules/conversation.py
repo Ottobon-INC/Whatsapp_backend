@@ -5,17 +5,23 @@ import uuid
 from supabase_client import supabase_insert, supabase_select
 
 
+from modules.security import get_security_manager
+
 def _save_message(user_id: str, message: str, lang: str, message_type: str, chat_id: str | None = None):
+    # Security: Apply Hybrid Masking
+    sec_manager = get_security_manager()
+    masked_text = sec_manager.mask_hybrid(message, user_id)
+
     payload = {
         "user_id": user_id,
-        "message_text": message,
+        "message_text": masked_text,
         "message_type": message_type,
         "language": lang,
         "created_at": datetime.utcnow().isoformat(),
     }
     if chat_id:
         payload["chat_id"] = chat_id
-    return supabase_insert("sakhi_conversations", payload)
+    return supabase_insert("sakhi_conversations_new", payload)
 
 
 def save_user_message(user_id: str, text: str, lang: str = "en"):
@@ -37,7 +43,7 @@ def get_last_messages(user_id: str, limit: int = 5):
     Returns list of {"role": "user"|"sakhi", "content": "..."}.
     """
     rows = supabase_select(
-        "sakhi_conversations",
+        "sakhi_conversations_new",
         select="user_id,message_text,message_type,language,created_at",
         filters=f"user_id=eq.{user_id}",
         limit=50,  # grab recent chunk, then trim
@@ -49,9 +55,16 @@ def get_last_messages(user_id: str, limit: int = 5):
     sorted_rows = sorted(rows, key=lambda r: r.get("created_at", ""), reverse=True)
     recent = sorted_rows[:limit]
 
+    sec_manager = get_security_manager()
+    
     history = []
     for r in reversed(recent):  # oldest to newest
         role = "user" if r.get("message_type") == "user" else "sakhi"
-        history.append({"role": role, "content": r.get("message_text", "")})
+        masked_text = r.get("message_text", "")
+        
+        # Security: Unmask ONLY Medical terms for LLM Context
+        context_text = sec_manager.unmask_medical_only(masked_text)
+        
+        history.append({"role": role, "content": context_text})
 
     return history
